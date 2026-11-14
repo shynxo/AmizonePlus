@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Downloaded LMS files live in the app cache under lms/ -->
+    <cache-path name="lms" path="lms/" />
+    <!-- Downloaded app updates -->
+    <cache-path name="updates" path="updates/" />
+</paths>
