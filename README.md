@@ -34,4 +34,4 @@ for publishing updates.
 
 ---
 
-Brought to existence by Shynxo ✦
+Brought to existence by Shynxo (ig) ✦
