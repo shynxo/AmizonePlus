@@ -1972,6 +1972,77 @@ fun examWhen(t: Long, now: Long = System.currentTimeMillis()): String {
 
 ---
 
+## `app/src/main/java/com/student/amizoneplus/logic/CourseNames.kt`
+
+```kotlin
+package com.student.amizoneplus.logic
+
+/**
+ * Short, familiar names for courses ("Object Oriented Programming Using C++" → "OOPs",
+ * "Applied Mathematics- III" → "Maths III"). Known courses use the names students
+ * actually say; anything else long becomes an acronym. Roman-numeral parts are kept.
+ */
+private val KNOWN = listOf(
+    "object oriented programming" to "OOPs",
+    "data structure" to "DSA",
+    "design and analysis of algorithm" to "DAA",
+    "applied mathematics" to "Maths",
+    "engineering mathematics" to "Maths",
+    "discrete mathematics" to "Discrete Maths",
+    "probability and statistics" to "Prob & Stats",
+    "basic electronics" to "Electronics",
+    "digital electronics and computer organi" to "DECO",
+    "digital electronics" to "Digital Elec.",
+    "machine learning: theory" to "ML",
+    "electronic devices" to "EDC",
+    "elementary german" to "German",
+    "elementary french" to "French",
+    "elementary spanish" to "Spanish",
+    "elementary japanese" to "Japanese",
+    "operating system" to "OS",
+    "database management" to "DBMS",
+    "computer network" to "CN",
+    "computer organi" to "COA",
+    "computer architecture" to "COA",
+    "theory of computation" to "TOC",
+    "compiler" to "Compilers",
+    "software engineering" to "SE",
+    "artificial intelligence" to "AI",
+    "machine learning" to "ML",
+    "deep learning" to "DL",
+    "web development" to "Web Dev",
+    "environmental studies" to "EVS",
+    "environmental science" to "EVS",
+    "communication skill" to "Comm. Skills",
+    "professional communication" to "Prof. Comm.",
+    "behavioural science" to "Behavioural Sci.",
+    "building self-reliance" to "BSR",
+    "human values" to "Human Values",
+    "engineering physics" to "Physics",
+    "engineering chemistry" to "Chemistry",
+)
+
+private val SKIP = setOf("of", "and", "&", "using", "in", "for", "the", "to", "with", "a", "an", "on")
+
+private val NUMERAL = Regex("""(?:-|\s)\s*(I{1,3}|IV|V|VI{0,3}|IX|X)\s*$""", RegexOption.IGNORE_CASE)
+
+fun shortCourseName(name: String, max: Int = 16): String {
+    val clean = name.replace(Regex("""\s+"""), " ").trim()
+    val roman = NUMERAL.find(clean)?.groupValues?.get(1)?.uppercase()
+    val base = if (roman != null) clean.substring(0, NUMERAL.find(clean)!!.range.first).trim().trimEnd('-', ' ') else clean
+    val known = KNOWN.firstOrNull { base.lowercase().contains(it.first) }?.second
+    val short = when {
+        known != null -> known
+        base.length <= max -> base
+        else -> base.split(' ', '-', '/').filter { it.isNotBlank() && it.lowercase() !in SKIP }
+            .joinToString("") { w -> if (w.all { it.isUpperCase() || it.isDigit() || it == '+' }) w else w.first().uppercase() }
+    }
+    return if (roman != null) "$short $roman" else short
+}
+```
+
+---
+
 ## `app/src/main/java/com/student/amizoneplus/work/Notifier.kt`
 
 ```kotlin
@@ -2306,35 +2377,54 @@ object NotifArt {
         val left = if (big) 56f else 44f
         val textW = (w - petW - left - 70).toFloat()
         val ink = if (kind == "exam") CREAM else INK
-        val tagP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = if (big) 38f else 30f; color = ink; alpha = 200; letterSpacing = 0.12f }
-        val titleP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = condensed; textSize = if (big) 104f else 68f; color = ink }
-        val detP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = if (big) 36f else 28f; color = ink; alpha = 220 }
+        val tagP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = if (big) 36f else 28f; color = ink; alpha = 200; letterSpacing = 0.12f }
+        val detP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = if (big) 32f else 25f; color = ink; alpha = 215 }
 
-        var y = if (big) 96f else 58f
-        c.drawText(TextUtils.ellipsize(tag.uppercase(), tagP, textW, TextUtils.TruncateAt.END).toString(), left, y, tagP)
-        if (big) {
-            // Title over up to two lines.
-            val words = title.uppercase().split(' ')
-            val lines = mutableListOf<String>(); var cur = ""
-            for (wd in words) {
-                val next = if (cur.isEmpty()) wd else "$cur $wd"
-                if (titleP.measureText(next) <= textW || cur.isEmpty()) cur = next else { lines += cur; cur = wd }
-            }
-            if (cur.isNotEmpty()) lines += cur
-            y += 30f
-            lines.take(2).forEachIndexed { i, l ->
-                y += 100f
-                val s = if (i == 1 && lines.size > 2) TextUtils.ellipsize("$l ${lines.drop(2).joinToString(" ")}", titleP, textW, TextUtils.TruncateAt.END).toString() else l
-                c.drawText(s, left, y, titleP)
-            }
-            y += 70f
-        } else {
-            y += 74f
-            c.drawText(TextUtils.ellipsize(title.uppercase(), titleP, textW, TextUtils.TruncateAt.END).toString(), left, y, titleP)
-            y += 50f
+        // Big short name ("OOPs", "Maths III", "DSA"), sized down until it fits in full —
+        // never "…". The full course name sits underneath in small type.
+        val short = com.student.amizoneplus.logic.shortCourseName(title).uppercase().replace("OOPS", "OOPs")
+        val full = title.trim()
+        val titleP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = condensed; color = ink }
+        var size = if (big) 112f else 70f
+        val minSize = if (big) 58f else 40f
+        titleP.textSize = size
+        while (titleP.measureText(short) > textW && size > minSize) { size -= 2f; titleP.textSize = size }
+
+        val lines = mutableListOf<Pair<String, TextPaint>>()
+        lines += tag.uppercase() to tagP
+        lines += short to titleP
+        if (!full.equals(short, true)) lines += full to detP
+        if (big && detail.isNotBlank()) lines += detail to detP
+
+        // Lay out top to bottom, centred vertically in the card.
+        val gaps = lines.map { (_, pt) -> pt.textSize * (if (pt === titleP) 1.02f else 1.35f) }
+        var y = (h - gaps.sum()) / 2f
+        lines.forEachIndexed { i, (txt, pt) ->
+            y += gaps[i]
+            if (pt === titleP) c.drawText(txt, left, y - pt.textSize * 0.12f, pt)
+            else y += smallFit(txt, pt, textW, if (big && pt === detP) 2 else 1, c, left, y, gaps[i])
         }
-        c.drawText(TextUtils.ellipsize(detail, detP, textW, TextUtils.TruncateAt.END).toString(), left, y, detP)
         return bmp
+    }
+
+    /**
+     * Draws small text without "…" where possible: shrinks it a little, then wraps to a
+     * second line (when [maxLines] is 2). Returns the extra height used.
+     */
+    private fun smallFit(text: String, p: TextPaint, width: Float, maxLines: Int, c: Canvas, x: Float, y: Float, lineH: Float): Float {
+        val base = p.textSize
+        while (p.measureText(text) > width && p.textSize > base * 0.8f) p.textSize -= 1f
+        var extra = 0f
+        if (p.measureText(text) <= width) c.drawText(text, x, y, p)
+        else if (maxLines >= 2) {
+            val words = text.split(' '); var first = ""
+            for (wd in words) { val n = if (first.isEmpty()) wd else "$first $wd"; if (p.measureText(n) <= width) first = n else break }
+            c.drawText(first, x, y, p)
+            extra = lineH * 0.85f
+            c.drawText(TextUtils.ellipsize(text.removePrefix(first).trim(), p, width, TextUtils.TruncateAt.END).toString(), x, y + extra, p)
+        } else c.drawText(TextUtils.ellipsize(text, p, width, TextUtils.TruncateAt.END).toString(), x, y, p)
+        p.textSize = base
+        return extra
     }
 
     private data class Pet(val frames: Map<String, Array<String>>, val pal: Map<Char, Int>, val cat: Boolean)

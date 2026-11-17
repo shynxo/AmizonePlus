@@ -85,6 +85,7 @@ compileSdk/targetSdk 37 · minSdk 26 (Android 8+). Gradle JDK = Android Studio's
 | `Attendance.kt` | %, "can skip / must attend", and the **credits × 15** semester plan |
 | `Insights.kt` | Attendance by weekday, present streak, badges |
 | `When.kt` | Calendar-day countdowns for exams ("today at 10:00", "tomorrow", "in 3 days", "happening now") |
+| `CourseNames.kt` | Short course names for notifications (OOPs, DSA, Maths III…), acronyms for anything else long |
 
 ### Background (`work/`)
 | File | Purpose |

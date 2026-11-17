@@ -47,35 +47,54 @@ object NotifArt {
         val left = if (big) 56f else 44f
         val textW = (w - petW - left - 70).toFloat()
         val ink = if (kind == "exam") CREAM else INK
-        val tagP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = if (big) 38f else 30f; color = ink; alpha = 200; letterSpacing = 0.12f }
-        val titleP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = condensed; textSize = if (big) 104f else 68f; color = ink }
-        val detP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = if (big) 36f else 28f; color = ink; alpha = 220 }
+        val tagP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = if (big) 36f else 28f; color = ink; alpha = 200; letterSpacing = 0.12f }
+        val detP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = if (big) 32f else 25f; color = ink; alpha = 215 }
 
-        var y = if (big) 96f else 58f
-        c.drawText(TextUtils.ellipsize(tag.uppercase(), tagP, textW, TextUtils.TruncateAt.END).toString(), left, y, tagP)
-        if (big) {
-            // Title over up to two lines.
-            val words = title.uppercase().split(' ')
-            val lines = mutableListOf<String>(); var cur = ""
-            for (wd in words) {
-                val next = if (cur.isEmpty()) wd else "$cur $wd"
-                if (titleP.measureText(next) <= textW || cur.isEmpty()) cur = next else { lines += cur; cur = wd }
-            }
-            if (cur.isNotEmpty()) lines += cur
-            y += 30f
-            lines.take(2).forEachIndexed { i, l ->
-                y += 100f
-                val s = if (i == 1 && lines.size > 2) TextUtils.ellipsize("$l ${lines.drop(2).joinToString(" ")}", titleP, textW, TextUtils.TruncateAt.END).toString() else l
-                c.drawText(s, left, y, titleP)
-            }
-            y += 70f
-        } else {
-            y += 74f
-            c.drawText(TextUtils.ellipsize(title.uppercase(), titleP, textW, TextUtils.TruncateAt.END).toString(), left, y, titleP)
-            y += 50f
+        // Big short name ("OOPs", "Maths III", "DSA"), sized down until it fits in full —
+        // never "…". The full course name sits underneath in small type.
+        val short = com.student.amizoneplus.logic.shortCourseName(title).uppercase().replace("OOPS", "OOPs")
+        val full = title.trim()
+        val titleP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = condensed; color = ink }
+        var size = if (big) 112f else 70f
+        val minSize = if (big) 58f else 40f
+        titleP.textSize = size
+        while (titleP.measureText(short) > textW && size > minSize) { size -= 2f; titleP.textSize = size }
+
+        val lines = mutableListOf<Pair<String, TextPaint>>()
+        lines += tag.uppercase() to tagP
+        lines += short to titleP
+        if (!full.equals(short, true)) lines += full to detP
+        if (big && detail.isNotBlank()) lines += detail to detP
+
+        // Lay out top to bottom, centred vertically in the card.
+        val gaps = lines.map { (_, pt) -> pt.textSize * (if (pt === titleP) 1.02f else 1.35f) }
+        var y = (h - gaps.sum()) / 2f
+        lines.forEachIndexed { i, (txt, pt) ->
+            y += gaps[i]
+            if (pt === titleP) c.drawText(txt, left, y - pt.textSize * 0.12f, pt)
+            else y += smallFit(txt, pt, textW, if (big && pt === detP) 2 else 1, c, left, y, gaps[i])
         }
-        c.drawText(TextUtils.ellipsize(detail, detP, textW, TextUtils.TruncateAt.END).toString(), left, y, detP)
         return bmp
+    }
+
+    /**
+     * Draws small text without "…" where possible: shrinks it a little, then wraps to a
+     * second line (when [maxLines] is 2). Returns the extra height used.
+     */
+    private fun smallFit(text: String, p: TextPaint, width: Float, maxLines: Int, c: Canvas, x: Float, y: Float, lineH: Float): Float {
+        val base = p.textSize
+        while (p.measureText(text) > width && p.textSize > base * 0.8f) p.textSize -= 1f
+        var extra = 0f
+        if (p.measureText(text) <= width) c.drawText(text, x, y, p)
+        else if (maxLines >= 2) {
+            val words = text.split(' '); var first = ""
+            for (wd in words) { val n = if (first.isEmpty()) wd else "$first $wd"; if (p.measureText(n) <= width) first = n else break }
+            c.drawText(first, x, y, p)
+            extra = lineH * 0.85f
+            c.drawText(TextUtils.ellipsize(text.removePrefix(first).trim(), p, width, TextUtils.TruncateAt.END).toString(), x, y + extra, p)
+        } else c.drawText(TextUtils.ellipsize(text, p, width, TextUtils.TruncateAt.END).toString(), x, y, p)
+        p.textSize = base
+        return extra
     }
 
     private data class Pet(val frames: Map<String, Array<String>>, val pal: Map<Char, Int>, val cat: Boolean)
