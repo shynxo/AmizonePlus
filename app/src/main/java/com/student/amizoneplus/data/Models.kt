@@ -97,6 +97,7 @@ data class Settings(
     val creditOverrides: Map<String, Double> = emptyMap(), // old (credits-based) — no longer used
     val weeklyOverrides: Map<String, Double> = emptyMap(), // course code -> classes per week, set by you
     val pets: String = "both", // "cat", "dog", "both" or "none"
+    val menuStyle: String = "fade", // quick menu: "fade" (unblur in place) or "slide" (springs down)
 )
 
 data class Credentials(val username: String, val password: String)

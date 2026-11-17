@@ -497,6 +497,7 @@ data class Settings(
     val creditOverrides: Map<String, Double> = emptyMap(), // old (credits-based) — no longer used
     val weeklyOverrides: Map<String, Double> = emptyMap(), // course code -> classes per week, set by you
     val pets: String = "both", // "cat", "dog", "both" or "none"
+    val menuStyle: String = "fade", // quick menu: "fade" (unblur in place) or "slide" (springs down)
 )
 
 data class Credentials(val username: String, val password: String)
@@ -7666,6 +7667,11 @@ fun MoreScreen(
                 SettingRow(Icons.Outlined.Description, "Exam reminders", right = { Toggle(st.examReminders) { v -> updateSettings { it.copy(examReminders = v) } } })
                 Caps("Attendance target", P.onInkFaint, Modifier.padding(top = 20.dp, bottom = 12.dp))
                 Choice(com.student.amizoneplus.logic.TARGETS, st.threshold, { "$it%" }) { v -> updateSettings { it.copy(threshold = v) } }
+                Caps("Menu animation", P.onInkFaint, Modifier.padding(top = 20.dp, bottom = 12.dp))
+                val styles = listOf("fade", "slide")
+                Choice(styles.indices.toList(), styles.indexOf(st.menuStyle).coerceAtLeast(0), { listOf("Fade in", "Slide down")[it] }) { i ->
+                    updateSettings { it.copy(menuStyle = styles[i]) }
+                }
                 Caps("Pets", P.onInkFaint, Modifier.padding(top = 20.dp, bottom = 12.dp))
                 val petOpts = listOf("cat", "dog", "both", "none")
                 Choice(petOpts.indices.toList(), petOpts.indexOf(st.pets).coerceAtLeast(0),
@@ -7844,6 +7850,7 @@ import com.student.amizoneplus.ui.theme.LocalHaptics
 import com.student.amizoneplus.ui.theme.P
 import com.student.amizoneplus.ui.theme.Type
 import kotlin.math.pow
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
@@ -7924,7 +7931,7 @@ private fun easeOut(t: Float) = 1f - (1f - t).pow(4)
 fun screenExit(m: Float) = (m * MENU_OPEN_MS / 300f).coerceIn(0f, 1f).let { easeOut(it) }
 
 @Composable
-fun QuickMenuOverlay(open: Boolean, fade: () -> Float, hazeState: dev.chrisbanes.haze.HazeState, onClose: () -> Unit, openPage: (String, String) -> Unit) {
+fun QuickMenuOverlay(open: Boolean, style: String, fade: () -> Float, hazeState: dev.chrisbanes.haze.HazeState, onClose: () -> Unit, openPage: (String, String) -> Unit) {
     val haptics = LocalHaptics.current
     var openGroup by remember { mutableStateOf<String?>(null) }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -7940,10 +7947,20 @@ fun QuickMenuOverlay(open: Boolean, fade: () -> Float, hazeState: dev.chrisbanes
     // Each row has its own spring: in with a soft bounce, staggered top to bottom;
     // out quickly in reverse order with no bounce.
     val rows = remember { List(MENU_GROUPS.size) { androidx.compose.animation.core.Animatable(0f) } }
+    val fadeStyle = style != "slide"
     LaunchedEffect(open) {
         rows.forEachIndexed { i, a ->
             launch {
-                if (open) {
+                if (fadeStyle) {
+                    // Fade: cards come into focus where they belong — unblur + a small rise. Quick.
+                    if (open) {
+                        kotlinx.coroutines.delay(i * 28L)
+                        a.animateTo(1f, tween(300, easing = com.student.amizoneplus.ui.theme.Motion.emphasized))
+                    } else {
+                        kotlinx.coroutines.delay((rows.size - 1 - i) * 14L)
+                        a.animateTo(0f, tween(170, easing = com.student.amizoneplus.ui.theme.Motion.accelerate))
+                    }
+                } else if (open) {
                     kotlinx.coroutines.delay(30L + i * 42L)
                     a.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.62f, stiffness = 320f))
                 } else {
@@ -8011,11 +8028,22 @@ fun QuickMenuOverlay(open: Boolean, fade: () -> Float, hazeState: dev.chrisbanes
                 ) {
                 MENU_GROUPS.forEachIndexed { i, g ->
                     Box(Modifier.graphicsLayer {
-                        val t = rows[i].value // springs past 1 a little: the bounce
-                        alpha = (t * 2f).coerceIn(0f, 1f)
-                        translationY = -(i + 1) * rowStep.toPx() * 0.9f * (1f - t)
-                        val sc = 0.94f + 0.06f * t
-                        scaleX = sc; scaleY = sc
+                        val t = rows[i].value
+                        if (fadeStyle) {
+                            alpha = t.coerceIn(0f, 1f)
+                            translationY = 14.dp.toPx() * (1f - t)
+                            val sc = 0.97f + 0.03f * t
+                            scaleX = sc; scaleY = sc
+                            val r = 18.dp.toPx() * (1f - t)
+                            renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && r > 0.5f)
+                                android.graphics.RenderEffect.createBlurEffect(r, r, android.graphics.Shader.TileMode.DECAL).asComposeRenderEffect()
+                            else null
+                        } else { // springs past 1 a little: the bounce
+                            alpha = (t * 2f).coerceIn(0f, 1f)
+                            translationY = -(i + 1) * rowStep.toPx() * 0.9f * (1f - t)
+                            val sc = 0.94f + 0.06f * t
+                            scaleX = sc; scaleY = sc
+                        }
                     }) {
                         UnfoldCard(
                             open = openGroup == g.title,
@@ -8361,7 +8389,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
         haptics.collapse(); menuOpen = false
         scope.launch {
             // Rows fold back first (~0.3 s), the backdrop follows and settles; then unmount.
-            kotlinx.coroutines.delay(120)
+            kotlinx.coroutines.delay(if (s.settings.menuStyle == "slide") 120 else 60)
             z.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 260f))
             if (!menuOpen) menuMounted = false
             after?.invoke()
@@ -8479,7 +8507,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
             // Pets roam above the screens and the nav (so they can be carried onto a tab).
             com.student.amizoneplus.ui.pets.PetLayer(pets, s.settings.pets, active = !menuMounted && web == null && !gallery && s.celebrate == null)
 
-            if (menuMounted) QuickMenuOverlay(menuOpen, { z.value }, menuHaze, { closeMenu() }) { path, title ->
+            if (menuMounted) QuickMenuOverlay(menuOpen, s.settings.menuStyle, { z.value }, menuHaze, { closeMenu() }) { path, title ->
                 // Sections the app already shows natively open in the app's own UI.
                 when (path.lowercase()) {
                     "/examination/examschedule" -> { scheduleFocus = "exams"; go(Route.Schedule) }
