@@ -258,8 +258,6 @@ private fun Main(vm: AppViewModel, s: UiState) {
                     else -> web = (AmizoneClient.BASE + path) to title
                 }
             }
-            // The permanent logo: top-left on every tab, and next to AMIZONE+ in the menu.
-            if (web == null && !gallery) com.student.amizoneplus.ui.shell.AppLogo()
 
             // Status-bar icons: light over the dark home, dark over bright hero colours.
             val window = (androidx.compose.ui.platform.LocalContext.current as? android.app.Activity)?.window
