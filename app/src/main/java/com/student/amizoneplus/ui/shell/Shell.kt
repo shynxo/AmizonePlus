@@ -102,10 +102,41 @@ fun MenuButton(bg: Color = P.cream, fg: Color = P.onCream) {
     CircleButton(if (menu.isOpen) Icons.Outlined.Close else Icons.Outlined.Apps, { menu.toggle() }, 48.dp, bg, fg, Feel.Select)
 }
 
-/** Bar used by the menu overlay & sheets: wordmark + close/menu. */
+/** Size of the permanent app logo in the top-left corner of every screen. */
+val LOGO = 44.dp
+
+/** Height of the band at the top of every page that the logo sits in. */
+val LOGO_BAND = L.page + L.header
+
+/**
+ * The app's logo, pinned top-left on every tab and above the quick menu (where the
+ * AMIZONE+ wordmark sits beside it). Tap it to open / close the menu.
+ */
+@Composable
+fun AppLogo(modifier: Modifier = Modifier) {
+    val menu = LocalMenu.current
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Box(
+        modifier
+            .padding(top = statusTop + L.page + (L.header - LOGO) / 2, start = L.page)
+            .size(LOGO)
+            .press({ menu.toggle() }, Feel.Select, 0.9f)
+            .background(Color(0xFF6F73F4), RoundedCornerShape(14.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(com.student.amizoneplus.R.drawable.ic_launcher_foreground),
+            contentDescription = "Amizone+",
+            modifier = Modifier.size(LOGO * 1.5f), // the drawable has the adaptive-icon safe margin
+        )
+    }
+}
+
+/** Bar used by the menu overlay & sheets: wordmark (beside the logo) + close/menu. */
 @Composable
 fun HeaderBar(modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().height(L.header), verticalAlignment = Alignment.CenterVertically) {
+        Spacer(Modifier.width(LOGO + 14.dp)) // the permanent logo sits here
         T("AMIZONE+", Type.headline, modifier = Modifier.weight(1f))
         MenuButton()
     }
@@ -171,7 +202,7 @@ fun HeroPage(
                             scaleX = s; scaleY = s
                         }
                         .background(heroColor)
-                        .padding(top = statusTop + 8.dp, start = L.page, end = L.page, bottom = overlap + 16.dp),
+                        .padding(top = statusTop + LOGO_BAND, start = L.page, end = L.page, bottom = overlap + 16.dp),
                     content = hero,
                 )
                 // Sheet: overlaps the hero's bottom edge; its corners soften as it reaches the top.
@@ -213,7 +244,7 @@ fun PlainPage(
         Column(
             // Opaque page colour: when pulled, its top rounds off like the hero pages.
             Modifier.fillMaxSize().background(P.bg).verticalScroll(rememberScrollState())
-                .padding(top = statusTop + 10.dp, start = L.page, end = L.page, bottom = navClearance),
+                .padding(top = statusTop + LOGO_BAND, start = L.page, end = L.page, bottom = navClearance),
             verticalArrangement = Arrangement.spacedBy(L.block),
         ) {
             banner?.invoke()

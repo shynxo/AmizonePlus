@@ -153,8 +153,9 @@ fun QuickMenuOverlay(open: Boolean, style: String, fade: () -> Float, hazeState:
                         kotlinx.coroutines.delay(i * 28L)
                         a.animateTo(1f, tween(300, easing = com.student.amizoneplus.ui.theme.Motion.emphasized))
                     } else {
-                        kotlinx.coroutines.delay((rows.size - 1 - i) * 14L)
-                        a.animateTo(0f, tween(170, easing = com.student.amizoneplus.ui.theme.Motion.accelerate))
+                        // Out a touch slower than in, blurring away as they sink.
+                        kotlinx.coroutines.delay((rows.size - 1 - i) * 22L)
+                        a.animateTo(0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0f, 0.7f, 0.2f)))
                     }
                 } else if (open) {
                     kotlinx.coroutines.delay(30L + i * 42L)
@@ -226,11 +227,13 @@ fun QuickMenuOverlay(open: Boolean, style: String, fade: () -> Float, hazeState:
                     Box(Modifier.graphicsLayer {
                         val t = rows[i].value
                         if (fadeStyle) {
+                            // Leaving is a little more pronounced than arriving: deeper blur, further sink.
+                            val k = if (open) 1f else 1.6f
                             alpha = t.coerceIn(0f, 1f)
-                            translationY = 14.dp.toPx() * (1f - t)
-                            val sc = 0.97f + 0.03f * t
+                            translationY = 14.dp.toPx() * k * (1f - t)
+                            val sc = 1f - (0.03f * k) * (1f - t)
                             scaleX = sc; scaleY = sc
-                            val r = 18.dp.toPx() * (1f - t)
+                            val r = 18.dp.toPx() * k * (1f - t)
                             renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && r > 0.5f)
                                 android.graphics.RenderEffect.createBlurEffect(r, r, android.graphics.Shader.TileMode.DECAL).asComposeRenderEffect()
                             else null

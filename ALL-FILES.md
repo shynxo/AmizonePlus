@@ -4916,10 +4916,41 @@ fun MenuButton(bg: Color = P.cream, fg: Color = P.onCream) {
     CircleButton(if (menu.isOpen) Icons.Outlined.Close else Icons.Outlined.Apps, { menu.toggle() }, 48.dp, bg, fg, Feel.Select)
 }
 
-/** Bar used by the menu overlay & sheets: wordmark + close/menu. */
+/** Size of the permanent app logo in the top-left corner of every screen. */
+val LOGO = 44.dp
+
+/** Height of the band at the top of every page that the logo sits in. */
+val LOGO_BAND = L.page + L.header
+
+/**
+ * The app's logo, pinned top-left on every tab and above the quick menu (where the
+ * AMIZONE+ wordmark sits beside it). Tap it to open / close the menu.
+ */
+@Composable
+fun AppLogo(modifier: Modifier = Modifier) {
+    val menu = LocalMenu.current
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Box(
+        modifier
+            .padding(top = statusTop + L.page + (L.header - LOGO) / 2, start = L.page)
+            .size(LOGO)
+            .press({ menu.toggle() }, Feel.Select, 0.9f)
+            .background(Color(0xFF6F73F4), RoundedCornerShape(14.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(com.student.amizoneplus.R.drawable.ic_launcher_foreground),
+            contentDescription = "Amizone+",
+            modifier = Modifier.size(LOGO * 1.5f), // the drawable has the adaptive-icon safe margin
+        )
+    }
+}
+
+/** Bar used by the menu overlay & sheets: wordmark (beside the logo) + close/menu. */
 @Composable
 fun HeaderBar(modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().height(L.header), verticalAlignment = Alignment.CenterVertically) {
+        Spacer(Modifier.width(LOGO + 14.dp)) // the permanent logo sits here
         T("AMIZONE+", Type.headline, modifier = Modifier.weight(1f))
         MenuButton()
     }
@@ -4985,7 +5016,7 @@ fun HeroPage(
                             scaleX = s; scaleY = s
                         }
                         .background(heroColor)
-                        .padding(top = statusTop + 8.dp, start = L.page, end = L.page, bottom = overlap + 16.dp),
+                        .padding(top = statusTop + LOGO_BAND, start = L.page, end = L.page, bottom = overlap + 16.dp),
                     content = hero,
                 )
                 // Sheet: overlaps the hero's bottom edge; its corners soften as it reaches the top.
@@ -5027,7 +5058,7 @@ fun PlainPage(
         Column(
             // Opaque page colour: when pulled, its top rounds off like the hero pages.
             Modifier.fillMaxSize().background(P.bg).verticalScroll(rememberScrollState())
-                .padding(top = statusTop + 10.dp, start = L.page, end = L.page, bottom = navClearance),
+                .padding(top = statusTop + LOGO_BAND, start = L.page, end = L.page, bottom = navClearance),
             verticalArrangement = Arrangement.spacedBy(L.block),
         ) {
             banner?.invoke()
@@ -7957,8 +7988,9 @@ fun QuickMenuOverlay(open: Boolean, style: String, fade: () -> Float, hazeState:
                         kotlinx.coroutines.delay(i * 28L)
                         a.animateTo(1f, tween(300, easing = com.student.amizoneplus.ui.theme.Motion.emphasized))
                     } else {
-                        kotlinx.coroutines.delay((rows.size - 1 - i) * 14L)
-                        a.animateTo(0f, tween(170, easing = com.student.amizoneplus.ui.theme.Motion.accelerate))
+                        // Out a touch slower than in, blurring away as they sink.
+                        kotlinx.coroutines.delay((rows.size - 1 - i) * 22L)
+                        a.animateTo(0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0f, 0.7f, 0.2f)))
                     }
                 } else if (open) {
                     kotlinx.coroutines.delay(30L + i * 42L)
@@ -8030,11 +8062,13 @@ fun QuickMenuOverlay(open: Boolean, style: String, fade: () -> Float, hazeState:
                     Box(Modifier.graphicsLayer {
                         val t = rows[i].value
                         if (fadeStyle) {
+                            // Leaving is a little more pronounced than arriving: deeper blur, further sink.
+                            val k = if (open) 1f else 1.6f
                             alpha = t.coerceIn(0f, 1f)
-                            translationY = 14.dp.toPx() * (1f - t)
-                            val sc = 0.97f + 0.03f * t
+                            translationY = 14.dp.toPx() * k * (1f - t)
+                            val sc = 1f - (0.03f * k) * (1f - t)
                             scaleX = sc; scaleY = sc
-                            val r = 18.dp.toPx() * (1f - t)
+                            val r = 18.dp.toPx() * k * (1f - t)
                             renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && r > 0.5f)
                                 android.graphics.RenderEffect.createBlurEffect(r, r, android.graphics.Shader.TileMode.DECAL).asComposeRenderEffect()
                             else null
@@ -8389,7 +8423,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
         haptics.collapse(); menuOpen = false
         scope.launch {
             // Rows fold back first (~0.3 s), the backdrop follows and settles; then unmount.
-            kotlinx.coroutines.delay(if (s.settings.menuStyle == "slide") 120 else 60)
+            kotlinx.coroutines.delay(if (s.settings.menuStyle == "slide") 120 else 170) // let the cards blur away first
             z.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 260f))
             if (!menuOpen) menuMounted = false
             after?.invoke()
@@ -8516,6 +8550,8 @@ private fun Main(vm: AppViewModel, s: UiState) {
                     else -> web = (AmizoneClient.BASE + path) to title
                 }
             }
+            // The permanent logo: top-left on every tab, and next to AMIZONE+ in the menu.
+            if (web == null && !gallery) com.student.amizoneplus.ui.shell.AppLogo()
 
             // Status-bar icons: light over the dark home, dark over bright hero colours.
             val window = (androidx.compose.ui.platform.LocalContext.current as? android.app.Activity)?.window

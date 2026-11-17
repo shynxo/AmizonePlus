@@ -131,7 +131,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
         haptics.collapse(); menuOpen = false
         scope.launch {
             // Rows fold back first (~0.3 s), the backdrop follows and settles; then unmount.
-            kotlinx.coroutines.delay(if (s.settings.menuStyle == "slide") 120 else 60)
+            kotlinx.coroutines.delay(if (s.settings.menuStyle == "slide") 120 else 170) // let the cards blur away first
             z.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 260f))
             if (!menuOpen) menuMounted = false
             after?.invoke()
@@ -258,6 +258,8 @@ private fun Main(vm: AppViewModel, s: UiState) {
                     else -> web = (AmizoneClient.BASE + path) to title
                 }
             }
+            // The permanent logo: top-left on every tab, and next to AMIZONE+ in the menu.
+            if (web == null && !gallery) com.student.amizoneplus.ui.shell.AppLogo()
 
             // Status-bar icons: light over the dark home, dark over bright hero colours.
             val window = (androidx.compose.ui.platform.LocalContext.current as? android.app.Activity)?.window
