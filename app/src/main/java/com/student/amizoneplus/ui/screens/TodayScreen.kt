@@ -1,5 +1,8 @@
 package com.student.amizoneplus.ui.screens
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import com.student.amizoneplus.ui.pets.perch
@@ -93,9 +96,12 @@ private fun dailySeries(history: List<ScheduledClass>): List<Pair<Long, Float>> 
         .map { (_, cs) -> cs.first().startMs to cs.count { it.state == "present" }.toFloat() / cs.size }
         .sortedBy { it.first }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
-fun TodayScreen(s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges: () -> Unit, banner: (@Composable () -> Unit)?) {
+fun TodayScreen(
+    s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges: () -> Unit, banner: (@Composable () -> Unit)?,
+    shared: SharedTransitionScope, anim: AnimatedVisibilityScope,
+) {
     val menu = LocalMenu.current
     val data = s.data
     val t = s.settings.threshold
@@ -123,11 +129,17 @@ fun TodayScreen(s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges
         // Greeting row
         Rise(i++) {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                val ctx = androidx.compose.ui.platform.LocalContext.current
-                var pokes by remember { mutableIntStateOf(0) }
-                Box(Modifier.press({
-                    android.widget.Toast.makeText(ctx, com.student.amizoneplus.ui.kit.Quips.tap(pokes++), android.widget.Toast.LENGTH_SHORT).show()
-                }, Feel.Select, 0.88f)) { Avatar(name.ifEmpty { "A" }, P.sun, 52.dp) }
+                // Tap your initials to open Settings / About — the circle morphs into that page's hero.
+                with(shared) {
+                    Box(
+                        Modifier
+                            .sharedBounds(
+                                rememberSharedContentState("avatarMorph"), anim,
+                                clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(32.dp)),
+                            )
+                            .press({ go(Route.More) }, Feel.Select, 0.88f),
+                    ) { Avatar(name.ifEmpty { "A" }, P.sun, 52.dp) }
+                }
                 T(if (first.isNotEmpty()) "Hi, $first!" else "Hi!", Type.label.copy(fontSize = 18.sp()), modifier = Modifier.weight(1f).padding(start = 14.dp), maxLines = 1)
                 CircleButton(Icons.Outlined.Apps, menu.open, 52.dp)
                 Spacer(Modifier.width(10.dp))

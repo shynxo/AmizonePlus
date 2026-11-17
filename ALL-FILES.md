@@ -446,7 +446,7 @@ data class Course(
 )
 
 @Serializable
-data class Profile(val name: String, val program: String, val batch: String, val enrollmentNo: String)
+data class Profile(val name: String, val program: String, val batch: String, val enrollmentNo: String, val email: String = "")
 
 @Serializable
 data class CourseResult(val code: String, val name: String, val grade: String, val gradePoint: Double, val credits: Double, val max: Double)
@@ -811,6 +811,10 @@ object Parsers {
 
     /* ---------- Profile ---------- */
 
+    /** The Amizone email shown on Home ("Email-id : you@s.amity.edu"). Empty if not found. */
+    fun homeEmail(html: String): String =
+        Jsoup.parse(html).selectFirst("a.mail-id-text")?.ownText()?.trim().orEmpty()
+
     fun profile(html: String): Profile {
         val doc = Jsoup.parse(html)
         val front = doc.selectFirst("#lblNameIDCardFront1") ?: throw AmizoneException.Parse("ID card not found")
@@ -1086,7 +1090,7 @@ class AmizoneClient(private val credentials: () -> Credentials?) {
 
         val quiet = setOf("History", "Documents", "Credits")
         AmizoneData(
-            profile = profile.await(),
+            profile = profile.await()?.let { if (it.email.isEmpty()) it.copy(email = runCatching { Parsers.homeEmail(home) }.getOrDefault("")) else it },
             attendance = attendance,
             schedule = schedule.await(),
             history = history.await(),
@@ -5052,12 +5056,12 @@ fun CollapsingPage(
 
 /* ───────────── Bottom nav: dark icon pill, sliding sky tile ───────────── */
 
-private val TABS = listOf(
+// Settings/About is reached from the avatar on Home, not a nav tab.
+val TABS = listOf(
     Route.Today to Icons.Outlined.Home,
     Route.Schedule to Icons.Outlined.Schedule,
     Route.Subjects to Icons.Outlined.AutoStories,
     Route.Lms to Icons.Outlined.FolderOpen,
-    Route.More to Icons.Outlined.Settings,
 )
 
 @Composable
@@ -5581,6 +5585,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun relogin(): Boolean = runCatching { repo.client.login() }.isSuccess
 
     fun pendingCredentials() = pendingCreds
+
+    /** Your saved Amizone password, for the "reveal" row in About. Never leaves this phone. */
+    fun currentPassword(): String? = repo.storage.loadCredentials()?.password
 
     fun signOut() {
         RefreshWorker.cancel(getApplication())
@@ -6234,6 +6241,9 @@ fun BadgeGallery(earned: List<Badge>, onClose: () -> Unit) {
 ```kotlin
 package com.student.amizoneplus.ui.screens
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import com.student.amizoneplus.ui.pets.perch
@@ -6327,9 +6337,12 @@ private fun dailySeries(history: List<ScheduledClass>): List<Pair<Long, Float>> 
         .map { (_, cs) -> cs.first().startMs to cs.count { it.state == "present" }.toFloat() / cs.size }
         .sortedBy { it.first }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
-fun TodayScreen(s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges: () -> Unit, banner: (@Composable () -> Unit)?) {
+fun TodayScreen(
+    s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges: () -> Unit, banner: (@Composable () -> Unit)?,
+    shared: SharedTransitionScope, anim: AnimatedVisibilityScope,
+) {
     val menu = LocalMenu.current
     val data = s.data
     val t = s.settings.threshold
@@ -6357,11 +6370,17 @@ fun TodayScreen(s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges
         // Greeting row
         Rise(i++) {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                val ctx = androidx.compose.ui.platform.LocalContext.current
-                var pokes by remember { mutableIntStateOf(0) }
-                Box(Modifier.press({
-                    android.widget.Toast.makeText(ctx, com.student.amizoneplus.ui.kit.Quips.tap(pokes++), android.widget.Toast.LENGTH_SHORT).show()
-                }, Feel.Select, 0.88f)) { Avatar(name.ifEmpty { "A" }, P.sun, 52.dp) }
+                // Tap your initials to open Settings / About — the circle morphs into that page's hero.
+                with(shared) {
+                    Box(
+                        Modifier
+                            .sharedBounds(
+                                rememberSharedContentState("avatarMorph"), anim,
+                                clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(32.dp)),
+                            )
+                            .press({ go(Route.More) }, Feel.Select, 0.88f),
+                    ) { Avatar(name.ifEmpty { "A" }, P.sun, 52.dp) }
+                }
                 T(if (first.isNotEmpty()) "Hi, $first!" else "Hi!", Type.label.copy(fontSize = 18.sp()), modifier = Modifier.weight(1f).padding(start = 14.dp), maxLines = 1)
                 CircleButton(Icons.Outlined.Apps, menu.open, 52.dp)
                 Spacer(Modifier.width(10.dp))
@@ -7529,7 +7548,10 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.MilitaryTech
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.SystemUpdate
@@ -7605,6 +7627,7 @@ private fun Choice(values: List<Int>, value: Int, fmt: (Int) -> String, onChange
     }
 }
 
+@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 fun MoreScreen(
     s: UiState,
@@ -7617,6 +7640,9 @@ fun MoreScreen(
     focusResults: Boolean = false,
     onFocusHandled: () -> Unit = {},
     checkUpdates: () -> Unit = {},
+    getPassword: () -> String? = { null },
+    shared: androidx.compose.animation.SharedTransitionScope? = null,
+    anim: androidx.compose.animation.AnimatedVisibilityScope? = null,
 ) {
     val haptics = LocalHaptics.current
     var results by remember { mutableStateOf(focusResults) }
@@ -7634,7 +7660,14 @@ fun MoreScreen(
         banner = banner,
         hero = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp)
+                // Morphs from the avatar you tapped on Home, when that's how you got here.
+                val avatarMod = if (shared != null && anim != null) with(shared) {
+                    Modifier.sharedBounds(
+                        rememberSharedContentState("avatarMorph"), anim,
+                        clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(32.dp)),
+                    )
+                } else Modifier
+                Box(avatarMod) { com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp) }
                 Box(Modifier.weight(1f))
                 com.student.amizoneplus.ui.shell.MenuButton()
             }
@@ -7683,7 +7716,7 @@ fun MoreScreen(
         Rise(3) {
             Ink(padding = 20.dp) { SettingRow(Icons.AutoMirrored.Outlined.Logout, "Sign out", danger = true, onClick = { haptics.warning(); confirmOut = true }) }
         }
-        Rise(4) { AboutCard(checkUpdates) }
+        Rise(4) { AboutCard(checkUpdates, s.username, p?.email, getPassword) }
     }
 
     if (confirmOut) AlertDialog(
@@ -7698,11 +7731,12 @@ fun MoreScreen(
 }
 
 @Composable
-private fun AboutCard(checkUpdates: () -> Unit) {
+private fun AboutCard(checkUpdates: () -> Unit, username: String?, email: String?, getPassword: () -> String?) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val haptics = LocalHaptics.current
     val version = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "2" }
     var taps by remember { mutableStateOf(0) }
+    var revealed by remember { mutableStateOf(false) }
     Ink {
         Caps("About", P.onInkFaint, Modifier.padding(bottom = 14.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -7735,6 +7769,32 @@ private fun AboutCard(checkUpdates: () -> Unit) {
             T("Check for updates", Type.label, modifier = Modifier.weight(1f).padding(start = 12.dp))
             T("v$version", Type.caption, sub = true)
         }
+        Caps("Amizone account", P.onInkFaint, Modifier.padding(top = 22.dp, bottom = 10.dp))
+        Column(
+            Modifier.fillMaxWidth().background(P.cardRaised, RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 4.dp),
+        ) {
+            SettingRow(Icons.Outlined.School, "Amizone ID", right = { T(username ?: "—", Type.caption, ink = true, sub = true) })
+            SettingRow(Icons.Outlined.Language, "Email", right = {
+                T(email?.ifBlank { "—" } ?: "—", Type.caption, ink = true, sub = true, maxLines = 1,
+                    modifier = Modifier.widthIn(max = 150.dp))
+            })
+            SettingRow(
+                Icons.Outlined.Key, "Password",
+                onClick = { haptics.select(); revealed = !revealed },
+                right = {
+                    val pw = if (revealed) (getPassword() ?: "—") else "•".repeat((getPassword()?.length ?: 8).coerceIn(6, 14))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        T(pw, Type.caption, ink = true, sub = !revealed, maxLines = 1)
+                        Icon(
+                            if (revealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                            null, tint = P.onInkFaint, modifier = Modifier.padding(start = 10.dp).size(18.dp),
+                        )
+                    }
+                },
+            )
+        }
+        T("Only you can see this, on this phone. Nothing here ever leaves your device.",
+            Type.caption, ink = true, faint = true, modifier = Modifier.padding(top = 8.dp))
         Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             T("Type: Barlow Condensed & DM Mono (SIL Open Font License)", Type.caption, ink = true, sub = true)
             T("Unofficial app · not affiliated with Amity University", Type.caption, ink = true, sub = true)
@@ -8356,6 +8416,7 @@ fun AppRoot(vm: AppViewModel) {
     }
 }
 
+@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 private fun Main(vm: AppViewModel, s: UiState) {
     val scope = rememberCoroutineScope()
@@ -8459,7 +8520,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
                             onDragStart = { total = 0f },
                             onDragCancel = { scope.launch { swipe.animateTo(0f, androidx.compose.animation.core.spring(0.8f, 320f)) } },
                             onDragEnd = {
-                                val tabs = Route.entries
+                                val tabs = com.student.amizoneplus.ui.shell.TABS.map { it.first }
                                 val i = tabs.indexOf(routeNow)
                                 val next = when {
                                     total < -threshold && i < tabs.lastIndex -> tabs[i + 1]
@@ -8472,8 +8533,9 @@ private fun Main(vm: AppViewModel, s: UiState) {
                         ) { ch, dx ->
                             ch.consume()
                             total += dx
-                            val i = Route.entries.indexOf(routeNow)
-                            val atEdge = (i == 0 && total > 0) || (i == Route.entries.lastIndex && total < 0)
+                            val navTabs = com.student.amizoneplus.ui.shell.TABS.map { it.first }
+                            val i = navTabs.indexOf(routeNow)
+                            val atEdge = (i <= 0 && total > 0) || (i == navTabs.lastIndex && total < 0)
                             scope.launch { swipe.snapTo(total * (if (atEdge) 0.1f else 0.28f)) }
                         }
                     }
@@ -8482,25 +8544,32 @@ private fun Main(vm: AppViewModel, s: UiState) {
                         scaleX = sc; scaleY = sc
                         translationX = swipe.value
                     }) {
+                    androidx.compose.animation.SharedTransitionLayout {
                     AnimatedContent(
                         route,
                         transitionSpec = {
-                            // Slides the way the tabs are laid out: right-hand tabs come in from the right.
-                            val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
-                            (fadeIn(tween(240, easing = Motion.emphasized)) + slideInHorizontally(tween(420, easing = Motion.emphasized)) { dir * it / 7 }) togetherWith
-                                (fadeOut(tween(160)) + slideOutHorizontally(tween(320, easing = Motion.emphasized)) { -dir * it / 10 })
+                            // Going to/from Settings-About morphs via the avatar (handled by sharedBounds);
+                            // between ordinary tabs it's the usual horizontal slide.
+                            if (initialState == Route.More || targetState == Route.More) {
+                                fadeIn(tween(220, easing = Motion.emphasized)) togetherWith fadeOut(tween(160))
+                            } else {
+                                val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                                (fadeIn(tween(240, easing = Motion.emphasized)) + slideInHorizontally(tween(420, easing = Motion.emphasized)) { dir * it / 7 }) togetherWith
+                                    (fadeOut(tween(160)) + slideOutHorizontally(tween(320, easing = Motion.emphasized)) { -dir * it / 10 })
+                            }
                         },
                         label = "route",
                     ) { r ->
                         CompositionLocalProvider(com.student.amizoneplus.ui.pets.LocalPetRoute provides r) {
                         when (r) {
-                            Route.Today -> TodayScreen(s, ::go, { vm.refresh(true) }, { gallery = true }, banner)
+                            Route.Today -> TodayScreen(s, ::go, { vm.refresh(true) }, { gallery = true }, banner, this@SharedTransitionLayout, this)
                             Route.Subjects -> SubjectsScreen(s, { vm.refresh(true) }, { code -> lmsFocus = code; go(Route.Lms) }, vm::updateSettings, banner)
                             Route.Lms -> LmsScreen(vm, s, lmsFocus, { lmsFocus = null }, openWeb)
                             Route.Schedule -> ScheduleScreen(s, { vm.refresh(true) }, banner, scheduleFocus) { scheduleFocus = null }
-                            Route.More -> MoreScreen(s, { vm.refresh(true) }, vm::updateSettings, { gallery = true }, openWeb, vm::signOut, banner, resultsFocus, { resultsFocus = false }, checkUpdates)
+                            Route.More -> MoreScreen(s, { vm.refresh(true) }, vm::updateSettings, { gallery = true }, openWeb, vm::signOut, banner, resultsFocus, { resultsFocus = false }, checkUpdates, vm::currentPassword, this@SharedTransitionLayout, this)
                         }
                         }
+                    }
                     }
                 }
             }

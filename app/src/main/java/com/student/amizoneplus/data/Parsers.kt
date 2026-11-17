@@ -187,6 +187,10 @@ object Parsers {
 
     /* ---------- Profile ---------- */
 
+    /** The Amizone email shown on Home ("Email-id : you@s.amity.edu"). Empty if not found. */
+    fun homeEmail(html: String): String =
+        Jsoup.parse(html).selectFirst("a.mail-id-text")?.ownText()?.trim().orEmpty()
+
     fun profile(html: String): Profile {
         val doc = Jsoup.parse(html)
         val front = doc.selectFirst("#lblNameIDCardFront1") ?: throw AmizoneException.Parse("ID card not found")

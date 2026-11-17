@@ -46,7 +46,7 @@ data class Course(
 )
 
 @Serializable
-data class Profile(val name: String, val program: String, val batch: String, val enrollmentNo: String)
+data class Profile(val name: String, val program: String, val batch: String, val enrollmentNo: String, val email: String = "")
 
 @Serializable
 data class CourseResult(val code: String, val name: String, val grade: String, val gradePoint: Double, val credits: Double, val max: Double)

@@ -128,6 +128,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun pendingCredentials() = pendingCreds
 
+    /** Your saved Amizone password, for the "reveal" row in About. Never leaves this phone. */
+    fun currentPassword(): String? = repo.storage.loadCredentials()?.password
+
     fun signOut() {
         RefreshWorker.cancel(getApplication())
         com.student.amizoneplus.work.KeepAliveWorker.cancel(getApplication())

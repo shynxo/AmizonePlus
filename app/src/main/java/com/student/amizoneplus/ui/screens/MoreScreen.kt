@@ -29,7 +29,10 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.MilitaryTech
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.SystemUpdate
@@ -105,6 +108,7 @@ private fun Choice(values: List<Int>, value: Int, fmt: (Int) -> String, onChange
     }
 }
 
+@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 fun MoreScreen(
     s: UiState,
@@ -117,6 +121,9 @@ fun MoreScreen(
     focusResults: Boolean = false,
     onFocusHandled: () -> Unit = {},
     checkUpdates: () -> Unit = {},
+    getPassword: () -> String? = { null },
+    shared: androidx.compose.animation.SharedTransitionScope? = null,
+    anim: androidx.compose.animation.AnimatedVisibilityScope? = null,
 ) {
     val haptics = LocalHaptics.current
     var results by remember { mutableStateOf(focusResults) }
@@ -134,7 +141,14 @@ fun MoreScreen(
         banner = banner,
         hero = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp)
+                // Morphs from the avatar you tapped on Home, when that's how you got here.
+                val avatarMod = if (shared != null && anim != null) with(shared) {
+                    Modifier.sharedBounds(
+                        rememberSharedContentState("avatarMorph"), anim,
+                        clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(32.dp)),
+                    )
+                } else Modifier
+                Box(avatarMod) { com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp) }
                 Box(Modifier.weight(1f))
                 com.student.amizoneplus.ui.shell.MenuButton()
             }
@@ -183,7 +197,7 @@ fun MoreScreen(
         Rise(3) {
             Ink(padding = 20.dp) { SettingRow(Icons.AutoMirrored.Outlined.Logout, "Sign out", danger = true, onClick = { haptics.warning(); confirmOut = true }) }
         }
-        Rise(4) { AboutCard(checkUpdates) }
+        Rise(4) { AboutCard(checkUpdates, s.username, p?.email, getPassword) }
     }
 
     if (confirmOut) AlertDialog(
@@ -198,11 +212,12 @@ fun MoreScreen(
 }
 
 @Composable
-private fun AboutCard(checkUpdates: () -> Unit) {
+private fun AboutCard(checkUpdates: () -> Unit, username: String?, email: String?, getPassword: () -> String?) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val haptics = LocalHaptics.current
     val version = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "2" }
     var taps by remember { mutableStateOf(0) }
+    var revealed by remember { mutableStateOf(false) }
     Ink {
         Caps("About", P.onInkFaint, Modifier.padding(bottom = 14.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -235,6 +250,32 @@ private fun AboutCard(checkUpdates: () -> Unit) {
             T("Check for updates", Type.label, modifier = Modifier.weight(1f).padding(start = 12.dp))
             T("v$version", Type.caption, sub = true)
         }
+        Caps("Amizone account", P.onInkFaint, Modifier.padding(top = 22.dp, bottom = 10.dp))
+        Column(
+            Modifier.fillMaxWidth().background(P.cardRaised, RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 4.dp),
+        ) {
+            SettingRow(Icons.Outlined.School, "Amizone ID", right = { T(username ?: "—", Type.caption, ink = true, sub = true) })
+            SettingRow(Icons.Outlined.Language, "Email", right = {
+                T(email?.ifBlank { "—" } ?: "—", Type.caption, ink = true, sub = true, maxLines = 1,
+                    modifier = Modifier.widthIn(max = 150.dp))
+            })
+            SettingRow(
+                Icons.Outlined.Key, "Password",
+                onClick = { haptics.select(); revealed = !revealed },
+                right = {
+                    val pw = if (revealed) (getPassword() ?: "—") else "•".repeat((getPassword()?.length ?: 8).coerceIn(6, 14))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        T(pw, Type.caption, ink = true, sub = !revealed, maxLines = 1)
+                        Icon(
+                            if (revealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                            null, tint = P.onInkFaint, modifier = Modifier.padding(start = 10.dp).size(18.dp),
+                        )
+                    }
+                },
+            )
+        }
+        T("Only you can see this, on this phone. Nothing here ever leaves your device.",
+            Type.caption, ink = true, faint = true, modifier = Modifier.padding(top = 8.dp))
         Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             T("Type: Barlow Condensed & DM Mono (SIL Open Font License)", Type.caption, ink = true, sub = true)
             T("Unofficial app · not affiliated with Amity University", Type.caption, ink = true, sub = true)

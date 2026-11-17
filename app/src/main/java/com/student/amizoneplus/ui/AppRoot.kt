@@ -95,6 +95,7 @@ fun AppRoot(vm: AppViewModel) {
     }
 }
 
+@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 private fun Main(vm: AppViewModel, s: UiState) {
     val scope = rememberCoroutineScope()
@@ -198,7 +199,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
                             onDragStart = { total = 0f },
                             onDragCancel = { scope.launch { swipe.animateTo(0f, androidx.compose.animation.core.spring(0.8f, 320f)) } },
                             onDragEnd = {
-                                val tabs = Route.entries
+                                val tabs = com.student.amizoneplus.ui.shell.TABS.map { it.first }
                                 val i = tabs.indexOf(routeNow)
                                 val next = when {
                                     total < -threshold && i < tabs.lastIndex -> tabs[i + 1]
@@ -211,8 +212,9 @@ private fun Main(vm: AppViewModel, s: UiState) {
                         ) { ch, dx ->
                             ch.consume()
                             total += dx
-                            val i = Route.entries.indexOf(routeNow)
-                            val atEdge = (i == 0 && total > 0) || (i == Route.entries.lastIndex && total < 0)
+                            val navTabs = com.student.amizoneplus.ui.shell.TABS.map { it.first }
+                            val i = navTabs.indexOf(routeNow)
+                            val atEdge = (i <= 0 && total > 0) || (i == navTabs.lastIndex && total < 0)
                             scope.launch { swipe.snapTo(total * (if (atEdge) 0.1f else 0.28f)) }
                         }
                     }
@@ -221,25 +223,32 @@ private fun Main(vm: AppViewModel, s: UiState) {
                         scaleX = sc; scaleY = sc
                         translationX = swipe.value
                     }) {
+                    androidx.compose.animation.SharedTransitionLayout {
                     AnimatedContent(
                         route,
                         transitionSpec = {
-                            // Slides the way the tabs are laid out: right-hand tabs come in from the right.
-                            val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
-                            (fadeIn(tween(240, easing = Motion.emphasized)) + slideInHorizontally(tween(420, easing = Motion.emphasized)) { dir * it / 7 }) togetherWith
-                                (fadeOut(tween(160)) + slideOutHorizontally(tween(320, easing = Motion.emphasized)) { -dir * it / 10 })
+                            // Going to/from Settings-About morphs via the avatar (handled by sharedBounds);
+                            // between ordinary tabs it's the usual horizontal slide.
+                            if (initialState == Route.More || targetState == Route.More) {
+                                fadeIn(tween(220, easing = Motion.emphasized)) togetherWith fadeOut(tween(160))
+                            } else {
+                                val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                                (fadeIn(tween(240, easing = Motion.emphasized)) + slideInHorizontally(tween(420, easing = Motion.emphasized)) { dir * it / 7 }) togetherWith
+                                    (fadeOut(tween(160)) + slideOutHorizontally(tween(320, easing = Motion.emphasized)) { -dir * it / 10 })
+                            }
                         },
                         label = "route",
                     ) { r ->
                         CompositionLocalProvider(com.student.amizoneplus.ui.pets.LocalPetRoute provides r) {
                         when (r) {
-                            Route.Today -> TodayScreen(s, ::go, { vm.refresh(true) }, { gallery = true }, banner)
+                            Route.Today -> TodayScreen(s, ::go, { vm.refresh(true) }, { gallery = true }, banner, this@SharedTransitionLayout, this)
                             Route.Subjects -> SubjectsScreen(s, { vm.refresh(true) }, { code -> lmsFocus = code; go(Route.Lms) }, vm::updateSettings, banner)
                             Route.Lms -> LmsScreen(vm, s, lmsFocus, { lmsFocus = null }, openWeb)
                             Route.Schedule -> ScheduleScreen(s, { vm.refresh(true) }, banner, scheduleFocus) { scheduleFocus = null }
-                            Route.More -> MoreScreen(s, { vm.refresh(true) }, vm::updateSettings, { gallery = true }, openWeb, vm::signOut, banner, resultsFocus, { resultsFocus = false }, checkUpdates)
+                            Route.More -> MoreScreen(s, { vm.refresh(true) }, vm::updateSettings, { gallery = true }, openWeb, vm::signOut, banner, resultsFocus, { resultsFocus = false }, checkUpdates, vm::currentPassword, this@SharedTransitionLayout, this)
                         }
                         }
+                    }
                     }
                 }
             }

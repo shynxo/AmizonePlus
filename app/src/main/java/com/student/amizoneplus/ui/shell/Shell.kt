@@ -238,12 +238,12 @@ fun CollapsingPage(
 
 /* ───────────── Bottom nav: dark icon pill, sliding sky tile ───────────── */
 
-private val TABS = listOf(
+// Settings/About is reached from the avatar on Home, not a nav tab.
+val TABS = listOf(
     Route.Today to Icons.Outlined.Home,
     Route.Schedule to Icons.Outlined.Schedule,
     Route.Subjects to Icons.Outlined.AutoStories,
     Route.Lms to Icons.Outlined.FolderOpen,
-    Route.More to Icons.Outlined.Settings,
 )
 
 @Composable
