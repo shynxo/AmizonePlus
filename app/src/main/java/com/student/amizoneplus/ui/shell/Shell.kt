@@ -52,6 +52,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -255,7 +259,24 @@ fun BottomNav(route: Route, onChange: (Route) -> Unit, hazeState: HazeState, mod
     val pad = 6.dp
     val slot = (pillW - pad * 2) / TABS.size
     val idx = TABS.indexOfFirst { it.first == route }.coerceAtLeast(0)
-    val x by animateDpAsState(slot * idx, Motion.spring(), label = "navx")
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val slotPx = with(density) { slot.toPx() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // Tile position (px). Follows the finger while dragging, springs to the tab otherwise.
+    val tile = remember { androidx.compose.animation.core.Animatable(slotPx * idx) }
+    var dragging by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var dragX by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    LaunchedEffect(idx, slotPx) { if (!dragging) tile.animateTo(slotPx * idx, androidx.compose.animation.core.spring(0.78f, 420f)) }
+    val idxNow by androidx.compose.runtime.rememberUpdatedState(idx)
+    val onChangeNow by androidx.compose.runtime.rememberUpdatedState(onChange)
+    // Grows while held, but never past the screen edges; bounces back on release.
+    val maxGrow = ((screenW - 8.dp) / pillW).coerceIn(1f, 1.07f)
+    val grow by androidx.compose.animation.core.animateFloatAsState(
+        if (dragging) maxGrow else 1f,
+        if (dragging) androidx.compose.animation.core.spring(0.7f, 500f) else androidx.compose.animation.core.spring(0.42f, 380f),
+        label = "navgrow",
+    )
+    val shown = if (dragging) (dragX / slotPx).roundToInt().coerceIn(0, TABS.lastIndex) else idx
 
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         // Progressive blur: strongest at the bottom, fading to nothing above the bar.
@@ -275,13 +296,30 @@ fun BottomNav(route: Route, onChange: (Route) -> Unit, hazeState: HazeState, mod
         Box(
             Modifier.padding(bottom = maxOf(gap, navBottom)).size(pillW, L.nav)
                 .onGloballyPositioned { pets?.navTop = it.boundsInWindow().top }
+                .graphicsLayer {
+                    scaleX = grow; scaleY = 1f + (grow - 1f) * 1.4f
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f) // grows upward, never off the bottom
+                }
+                .pointerInput(slotPx) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragging = true; dragX = slotPx * idxNow; haptics.press() },
+                        onDragEnd = { dragging = false; scope.launch { tile.snapTo(dragX); tile.animateTo(slotPx * idxNow, androidx.compose.animation.core.spring(0.6f, 380f)) } },
+                        onDragCancel = { dragging = false; scope.launch { tile.animateTo(slotPx * idxNow) } },
+                    ) { ch, dx ->
+                        ch.consume()
+                        dragX = (dragX + dx).coerceIn(0f, slotPx * TABS.lastIndex)
+                        val t = (dragX / slotPx).roundToInt().coerceIn(0, TABS.lastIndex)
+                        if (t != idxNow) { haptics.tick(); onChangeNow(TABS[t].first) }
+                    }
+                }
                 .background(P.nav.copy(alpha = 0.92f), RoundedCornerShape(L.nav / 2)).padding(pad),
         ) {
             // The tile slides between tabs.
-            Box(Modifier.offset(x = x + 3.dp).size(slot - 6.dp, L.nav - pad * 2).background(P.sky, RoundedCornerShape((L.nav - pad * 2) / 2)))
+            Box(Modifier.offset { androidx.compose.ui.unit.IntOffset(((if (dragging) dragX else tile.value) + 3.dp.toPx()).roundToInt(), 0) }
+                .size(slot - 6.dp, L.nav - pad * 2).background(P.sky, RoundedCornerShape((L.nav - pad * 2) / 2)))
             Row(Modifier.fillMaxSize()) {
                 TABS.forEachIndexed { i, (r, icon) ->
-                    val tint by animateColorAsState(if (i == idx) P.onHero else Color(0xFFDCDCE0), label = "navtint")
+                    val tint by animateColorAsState(if (i == shown) P.onHero else Color(0xFFDCDCE0), label = "navtint")
                     Box(
                         Modifier.width(slot).fillMaxSize()
                             .onGloballyPositioned { c -> pets?.navTabs?.set(r, c.boundsInWindow()) }

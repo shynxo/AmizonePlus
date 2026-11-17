@@ -81,6 +81,18 @@ class AmizoneClient(private val credentials: () -> Credentials?) {
 
     suspend fun home(): String = get("/Home")
 
+    /**
+     * A tiny signed-in request so the Amizone session doesn't expire from inactivity.
+     * Never signs in by itself (that's left to the app), so it can't trip the human check.
+     */
+    suspend fun keepAlive(): Boolean {
+        val d = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
+        val res = raw("/Calendar/home/GetDiaryEvents?start=$d&end=$d", ajax = true)
+        val ok = !Parsers.isLoginPage(res.text)
+        if (ok) Http.persistSession()
+        return ok
+    }
+
     suspend fun schedule(fromMs: Long, days: Int): List<ScheduledClass> {
         val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val start = Calendar.getInstance().apply {

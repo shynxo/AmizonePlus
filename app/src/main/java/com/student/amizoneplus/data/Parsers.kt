@@ -155,11 +155,17 @@ object Parsers {
         val rows = doc.select("table.table tbody tr").filter { cell(it, "Course Code") != null }
         val exams = rows.map { row ->
             val d = Regex("(\\d{1,2})/(\\d{1,2})/(\\d{4})").find(cellText(row, "Exam Date"))
-            val t = Regex("(\\d{1,2}):(\\d{2})").find(cellText(row, "Time"))
+            val timeText = cellText(row, "Time")
+            val t = Regex("(\\d{1,2}):(\\d{2})\\s*([AaPp][Mm])?").find(timeText)
+            var hour = t?.groupValues?.get(1)?.toInt() ?: 9
+            when (t?.groupValues?.get(3)?.uppercase()) {
+                "PM" -> if (hour < 12) hour += 12
+                "AM" -> if (hour == 12) hour = 0
+            }
             val time = d?.let {
                 Calendar.getInstance().apply {
                     set(it.groupValues[3].toInt(), it.groupValues[2].toInt() - 1, it.groupValues[1].toInt(),
-                        t?.groupValues?.get(1)?.toInt() ?: 9, t?.groupValues?.get(2)?.toInt() ?: 0, 0)
+                        hour, t?.groupValues?.get(2)?.toInt() ?: 0, 0)
                     set(Calendar.MILLISECOND, 0)
                 }.timeInMillis
             }

@@ -134,8 +134,9 @@ fun ScheduleScreen(s: UiState, onRefresh: () -> Unit, banner: (@Composable () ->
                     s.data?.exams?.title?.let { T(it.uppercase(), Type.caption, sub = true) }
                     if (exams.isEmpty()) T("No exams scheduled right now.", Type.body, sub = true, align = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 32.dp))
                     exams.forEachIndexed { i, e ->
-                        val past = (e.timeMs ?: Long.MAX_VALUE) < now
-                        val left = e.timeMs?.let { ceil((it - now) / 86_400_000.0).toInt() }
+                        val past = (e.timeMs ?: Long.MAX_VALUE) + com.student.amizoneplus.logic.EXAM_LENGTH_MS < now
+                        val live = e.timeMs?.let { now >= it && !past } == true
+                        val left = e.timeMs?.let { com.student.amizoneplus.logic.daysUntil(it, now) }
                         Rise(i) {
                             Card(color = P.card) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -154,7 +155,7 @@ fun ScheduleScreen(s: UiState, onRefresh: () -> Unit, banner: (@Composable () ->
                                         if (e.location.isNotEmpty()) T(e.location, Type.caption, sub = true, modifier = Modifier.padding(top = 2.dp))
                                         Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             if (e.mode.isNotEmpty()) Chip(e.mode, Tone.Lav)
-                                            if (!past && left != null) Chip(when { left <= 0 -> "Today"; left == 1 -> "Tomorrow"; else -> "In $left days" },
+                                            if (!past && left != null) Chip(when { live -> "Now"; left <= 0 -> "Today"; left == 1 -> "Tomorrow"; else -> "In $left days" },
                                                 if (left <= 3) Tone.Bad else Tone.Sage)
                                         }
                                     }

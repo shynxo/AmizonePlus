@@ -102,8 +102,8 @@ android {
         minSdk = 26
         targetSdk = 37
         // Bump BOTH for every release: versionCode +1, versionName to the new tag (v2.1.0 → "2.1.0").
-        versionCode = 2
-        versionName = "2.1.0"
+        versionCode = 3
+        versionName = "2.1.5"
 
         // Where the in-app updater looks for new versions: "<github-username>/<repo>".
         buildConfigField("String", "UPDATE_REPO", "\"shynxo/AmizonePlus\"")
@@ -215,6 +215,8 @@ dependencies {
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Lets exam reminders fire on time (8 pm the night before) when the phone allows it -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Lets the in-app updater hand a downloaded update to Android's installer -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -776,11 +778,17 @@ object Parsers {
         val rows = doc.select("table.table tbody tr").filter { cell(it, "Course Code") != null }
         val exams = rows.map { row ->
             val d = Regex("(\\d{1,2})/(\\d{1,2})/(\\d{4})").find(cellText(row, "Exam Date"))
-            val t = Regex("(\\d{1,2}):(\\d{2})").find(cellText(row, "Time"))
+            val timeText = cellText(row, "Time")
+            val t = Regex("(\\d{1,2}):(\\d{2})\\s*([AaPp][Mm])?").find(timeText)
+            var hour = t?.groupValues?.get(1)?.toInt() ?: 9
+            when (t?.groupValues?.get(3)?.uppercase()) {
+                "PM" -> if (hour < 12) hour += 12
+                "AM" -> if (hour == 12) hour = 0
+            }
             val time = d?.let {
                 Calendar.getInstance().apply {
                     set(it.groupValues[3].toInt(), it.groupValues[2].toInt() - 1, it.groupValues[1].toInt(),
-                        t?.groupValues?.get(1)?.toInt() ?: 9, t?.groupValues?.get(2)?.toInt() ?: 0, 0)
+                        hour, t?.groupValues?.get(2)?.toInt() ?: 0, 0)
                     set(Calendar.MILLISECOND, 0)
                 }.timeInMillis
             }
@@ -988,6 +996,18 @@ class AmizoneClient(private val credentials: () -> Credentials?) {
     }
 
     suspend fun home(): String = get("/Home")
+
+    /**
+     * A tiny signed-in request so the Amizone session doesn't expire from inactivity.
+     * Never signs in by itself (that's left to the app), so it can't trip the human check.
+     */
+    suspend fun keepAlive(): Boolean {
+        val d = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
+        val res = raw("/Calendar/home/GetDiaryEvents?start=$d&end=$d", ajax = true)
+        val ok = !Parsers.isLoginPage(res.text)
+        if (ok) Http.persistSession()
+        return ok
+    }
 
     suspend fun schedule(fromMs: Long, days: Int): List<ScheduledClass> {
         val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -1916,6 +1936,42 @@ val ALL_BADGES = listOf(
 
 ---
 
+## `app/src/main/java/com/student/amizoneplus/logic/When.kt`
+
+```kotlin
+package com.student.amizoneplus.logic
+
+import java.text.DateFormat
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
+import java.util.Date
+
+/** How long an exam is treated as "happening now" after it starts. */
+const val EXAM_LENGTH_MS = 3 * 3_600_000L
+
+/** Calendar days from [now] to [t] (0 = same day, 1 = tomorrow), not 24-hour blocks. */
+fun daysUntil(t: Long, now: Long = System.currentTimeMillis()): Int {
+    val z = ZoneId.systemDefault()
+    return ChronoUnit.DAYS.between(Instant.ofEpochMilli(now).atZone(z).toLocalDate(), Instant.ofEpochMilli(t).atZone(z).toLocalDate()).toInt()
+}
+
+/** "happening now" · "today at 10:00 am" · "tomorrow at 2:00 pm" · "in 4 days" · "done". */
+fun examWhen(t: Long, now: Long = System.currentTimeMillis()): String {
+    val time = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(t))
+    val d = daysUntil(t, now)
+    return when {
+        now >= t && now < t + EXAM_LENGTH_MS -> "happening now"
+        now >= t -> "done"
+        d == 0 -> "today at $time"
+        d == 1 -> "tomorrow at $time"
+        else -> "in $d days"
+    }
+}
+```
+
+---
+
 ## `app/src/main/java/com/student/amizoneplus/work/Notifier.kt`
 
 ```kotlin
@@ -1958,13 +2014,41 @@ object Notifier {
         Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
+    /** A reminder drawn as an app-styled card (see [NotifArt]). Falls back to plain text if drawing fails. */
+    fun showCard(context: Context, id: Int, title: String, body: String, tag: String, name: String, detail: String, kind: String, mood: NotifArt.Mood) {
+        if (!canPost(context)) return
+        val open = PendingIntent.getActivity(
+            context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val b = NotificationCompat.Builder(context, CH_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setColor(0xFF6F73F4.toInt())
+            .setContentTitle(title)
+            .setContentText(body)
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+        runCatching {
+            val small = android.widget.RemoteViews(context.packageName, R.layout.notif_art_small)
+            small.setImageViewBitmap(R.id.art, NotifArt.card(context, tag, name, detail, kind, mood, big = false))
+            val big = android.widget.RemoteViews(context.packageName, R.layout.notif_art_big)
+            big.setImageViewBitmap(R.id.art, NotifArt.card(context, tag, name, detail, kind, mood, big = true))
+            b.setStyle(NotificationCompat.DecoratedCustomViewStyle()).setCustomContentView(small).setCustomBigContentView(big)
+        }.onFailure { b.setStyle(NotificationCompat.BigTextStyle().bigText(body)) }
+        try {
+            NotificationManagerCompat.from(context).notify(id, b.build())
+        } catch (_: SecurityException) {
+        }
+    }
+
     fun show(context: Context, id: Int, channel: String, title: String, body: String) {
         if (!canPost(context)) return
         val open = PendingIntent.getActivity(
             context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val n = NotificationCompat.Builder(context, channel)
-            .setSmallIcon(R.mipmap.ic_launcher_monochrome)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -2009,32 +2093,39 @@ object Notifier {
         val ids = mutableSetOf<String>()
         val tf = DateFormat.getTimeInstance(DateFormat.SHORT)
 
-        fun at(time: Long, title: String, body: String) {
+        fun at(time: Long, title: String, body: String, tag: String, name: String, kind: String, mood: String) {
             if (time <= now || ids.size >= 60) return
             val id = (title + time).hashCode()
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pending(context, id, title, body))
+            val pi = pending(context, id, title, body, tag, name, kind, mood)
+            // Exact where allowed (so "8 pm the night before" really is 8 pm), else best effort.
+            if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi)
+            else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi)
             ids += id.toString()
         }
 
         if (s.classReminders) for (c in data.schedule) {
-            at(c.startMs - s.reminderMinutes * 60_000L, "${c.name} in ${s.reminderMinutes} min",
-                listOf(tf.format(Date(c.startMs)), c.room.takeIf { it.isNotBlank() }?.let { "Room $it" }, c.faculty)
-                    .filter { !it.isNullOrBlank() }.joinToString(" · "))
+            val detail = listOf(tf.format(Date(c.startMs)), c.room.takeIf { it.isNotBlank() }?.let { "Room $it" }, c.faculty)
+                .filter { !it.isNullOrBlank() }.joinToString(" · ")
+            at(c.startMs - s.reminderMinutes * 60_000L, "${c.name} in ${s.reminderMinutes} min", detail,
+                "Class in ${s.reminderMinutes} min", c.name, "class", "sit")
         }
         if (s.examReminders) for (e in data.exams?.exams.orEmpty()) {
             val t = e.timeMs ?: continue
-            val eve = Calendar.getInstance().apply { timeInMillis = t; add(Calendar.DAY_OF_YEAR, -1); set(Calendar.HOUR_OF_DAY, 20); set(Calendar.MINUTE, 0) }
+            // The evening before (8 pm). If the exam is early on the day after tomorrow's
+            // midnight edge, this is still the previous calendar day.
+            val eve = Calendar.getInstance().apply { timeInMillis = t; add(Calendar.DAY_OF_YEAR, -1); set(Calendar.HOUR_OF_DAY, 20); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }
             val body = listOf(tf.format(Date(t)), e.mode, e.location).filter { it.isNotBlank() }.joinToString(" · ")
-            at(eve.timeInMillis, "Exam tomorrow: ${e.name}", body)
-            at(t - 3_600_000L, "Exam in 1 hour: ${e.name}", body)
+            at(eve.timeInMillis, "Exam tomorrow: ${e.name}", body, "Exam tomorrow · ${tf.format(Date(t))}", e.name, "exam", "sleep")
+            at(t - 3_600_000L, "Exam in 1 hour: ${e.name}", body, "Exam in 1 hour", e.name, "exam", "sit")
         }
         storage.reminderIds = ids
     }
 
-    private fun pending(context: Context, id: Int, title: String, body: String): PendingIntent =
+    private fun pending(context: Context, id: Int, title: String, body: String, tag: String = "", name: String = "", kind: String = "", mood: String = ""): PendingIntent =
         PendingIntent.getBroadcast(
             context, id,
-            Intent(context, ReminderReceiver::class.java).putExtra("title", title).putExtra("body", body).putExtra("id", id),
+            Intent(context, ReminderReceiver::class.java).putExtra("title", title).putExtra("body", body).putExtra("id", id)
+                .putExtra("tag", tag).putExtra("name", name).putExtra("kind", kind).putExtra("mood", mood),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 }
@@ -2055,7 +2146,15 @@ import android.content.Intent
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val title = intent.getStringExtra("title") ?: return
-        Notifier.show(context, intent.getIntExtra("id", title.hashCode()), Notifier.CH_REMINDERS, title, intent.getStringExtra("body").orEmpty())
+        val id = intent.getIntExtra("id", title.hashCode())
+        val body = intent.getStringExtra("body").orEmpty()
+        val kind = intent.getStringExtra("kind").orEmpty()
+        if (kind.isEmpty()) return Notifier.show(context, id, Notifier.CH_REMINDERS, title, body)
+        Notifier.showCard(
+            context, id, title, body,
+            tag = intent.getStringExtra("tag").orEmpty(), name = intent.getStringExtra("name").orEmpty(), detail = body, kind = kind,
+            mood = if (intent.getStringExtra("mood") == "sleep") NotifArt.Mood.Sleep else NotifArt.Mood.Sit,
+        )
     }
 }
 ```
@@ -2102,6 +2201,176 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         }
 
         fun cancel(context: Context) = WorkManager.getInstance(context).cancelUniqueWork(NAME)
+    }
+}
+```
+
+---
+
+## `app/src/main/java/com/student/amizoneplus/work/KeepAliveWorker.kt`
+
+```kotlin
+package com.student.amizoneplus.work
+
+import android.content.Context
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import com.student.amizoneplus.data.Repository
+import java.util.concurrent.TimeUnit
+
+/**
+ * Keeps the Amizone session warm. Amizone signs you out after a stretch of no activity,
+ * and signing in again sometimes needs its human check. A tiny request every ~15 minutes
+ * (Android may stretch this while the phone sleeps) keeps the session from going idle,
+ * so opening the app hours later usually needs no sign-in at all.
+ */
+class KeepAliveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val repo = Repository.get(applicationContext)
+        if (repo.storage.loadCredentials() == null) return Result.success()
+        runCatching { repo.client.keepAlive() }
+        return Result.success()
+    }
+
+    companion object {
+        private const val NAME = "amizone-keepalive"
+
+        fun schedule(context: Context) {
+            val req = PeriodicWorkRequestBuilder<KeepAliveWorker>(15, TimeUnit.MINUTES)
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .build()
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.KEEP, req)
+        }
+
+        fun cancel(context: Context) = WorkManager.getInstance(context).cancelUniqueWork(NAME)
+    }
+}
+```
+
+---
+
+## `app/src/main/java/com/student/amizoneplus/work/NotifArt.kt`
+
+```kotlin
+package com.student.amizoneplus.work
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Typeface
+import android.text.TextPaint
+import android.text.TextUtils
+import androidx.core.content.res.ResourcesCompat
+import com.student.amizoneplus.R
+import com.student.amizoneplus.ui.pets.PetSprites
+
+/**
+ * Reminder notifications drawn in the app's own style: a rounded colour card, big
+ * condensed type, and a pixel pet keeping you company (sleeping the night before an
+ * exam, sitting up when it's close).
+ */
+object NotifArt {
+    private const val PERI = 0xFF6F73F4.toInt()
+    private const val SUN = 0xFFF7C54A.toInt()
+    private const val SAGE = 0xFFC6D4CB.toInt()
+    private const val INK = 0xFF161617.toInt()
+    private const val CREAM = 0xFFF4F1EA.toInt()
+
+    enum class Mood { Sleep, Sit }
+
+    /** Card for reminders. [tag] is the small caps line, [title] the big one, [detail] the last. */
+    fun card(context: Context, tag: String, title: String, detail: String, kind: String, mood: Mood, big: Boolean): Bitmap {
+        val w = 1080
+        val h = if (big) 460 else 210
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val bg = when (kind) { "exam" -> PERI; "class" -> SAGE; else -> SUN }
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = bg }
+        c.drawRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), 56f, 56f, p)
+
+        val condensed = runCatching { ResourcesCompat.getFont(context, R.font.barlow_condensed_bold) }.getOrNull() ?: Typeface.DEFAULT_BOLD
+        val mono = runCatching { ResourcesCompat.getFont(context, R.font.dm_mono_medium) }.getOrNull() ?: Typeface.MONOSPACE
+
+        // Pet on the right.
+        val petW = if (big) 300 else 150
+        val pet = pickPet(context)
+        if (pet != null) drawPet(c, pet, mood, w - petW - (if (big) 40 else 26), h - (if (big) 40 else 18), petW)
+
+        val left = if (big) 56f else 44f
+        val textW = (w - petW - left - 70).toFloat()
+        val ink = if (kind == "exam") CREAM else INK
+        val tagP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = if (big) 38f else 30f; color = ink; alpha = 200; letterSpacing = 0.12f }
+        val titleP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = condensed; textSize = if (big) 104f else 68f; color = ink }
+        val detP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = if (big) 36f else 28f; color = ink; alpha = 220 }
+
+        var y = if (big) 96f else 58f
+        c.drawText(TextUtils.ellipsize(tag.uppercase(), tagP, textW, TextUtils.TruncateAt.END).toString(), left, y, tagP)
+        if (big) {
+            // Title over up to two lines.
+            val words = title.uppercase().split(' ')
+            val lines = mutableListOf<String>(); var cur = ""
+            for (wd in words) {
+                val next = if (cur.isEmpty()) wd else "$cur $wd"
+                if (titleP.measureText(next) <= textW || cur.isEmpty()) cur = next else { lines += cur; cur = wd }
+            }
+            if (cur.isNotEmpty()) lines += cur
+            y += 30f
+            lines.take(2).forEachIndexed { i, l ->
+                y += 100f
+                val s = if (i == 1 && lines.size > 2) TextUtils.ellipsize("$l ${lines.drop(2).joinToString(" ")}", titleP, textW, TextUtils.TruncateAt.END).toString() else l
+                c.drawText(s, left, y, titleP)
+            }
+            y += 70f
+        } else {
+            y += 74f
+            c.drawText(TextUtils.ellipsize(title.uppercase(), titleP, textW, TextUtils.TruncateAt.END).toString(), left, y, titleP)
+            y += 50f
+        }
+        c.drawText(TextUtils.ellipsize(detail, detP, textW, TextUtils.TruncateAt.END).toString(), left, y, detP)
+        return bmp
+    }
+
+    private data class Pet(val frames: Map<String, Array<String>>, val pal: Map<Char, Int>, val cat: Boolean)
+
+    private fun pickPet(context: Context): Pet? {
+        val choice = runCatching { com.student.amizoneplus.data.Storage(context).loadSettings().pets }.getOrDefault("both")
+        val cat = when (choice) { "cat" -> true; "dog" -> false; "none" -> return null; else -> Math.random() < 0.5 }
+        return if (cat) Pet(PetSprites.CAT, PetSprites.CAT_PALETTE, true) else Pet(PetSprites.DOG, PetSprites.DOG_PALETTE, false)
+    }
+
+    /** Draws the sprite with its feet on (x .. x+width, baseline). */
+    private fun drawPet(c: Canvas, pet: Pet, mood: Mood, x: Int, baseline: Int, width: Int) {
+        val name = when (mood) {
+            Mood.Sleep -> if (pet.cat) "loaf0" else "lie0"
+            Mood.Sit -> if (pet.cat) "sit0" else "sit_tongue"
+        }
+        val rows = pet.frames[name] ?: return
+        val px = width / PetSprites.W.toFloat()
+        val top = baseline - PetSprites.H * px
+        val paint = Paint()
+        rows.forEachIndexed { ry, line ->
+            line.forEachIndexed { rx, ch ->
+                if (ch == '.') return@forEachIndexed
+                paint.color = pet.pal[ch] ?: return@forEachIndexed
+                c.drawRect(x + rx * px, top + ry * px, x + (rx + 1) * px + 0.5f, top + (ry + 1) * px + 0.5f, paint)
+            }
+        }
+        if (mood == Mood.Sleep) { // pixel z's
+            paint.color = CREAM
+            val zs = listOf("KKKK", "..K.", ".K..", "KKKK")
+            for ((k, sz) in listOf(0 to 0.9f, 1 to 0.65f)) {
+                val zx = x + width * (0.62f + k * 0.16f)
+                val zy = top + PetSprites.H * px * (0.1f - k * 0.12f)
+                zs.forEachIndexed { ry, l -> l.forEachIndexed { rx, ch -> if (ch == 'K') c.drawRect(zx + rx * px * sz, zy + ry * px * sz, zx + (rx + 1) * px * sz, zy + (ry + 1) * px * sz, paint) } }
+            }
+        }
     }
 }
 ```
@@ -2410,6 +2679,11 @@ import androidx.compose.animation.core.tween
 import com.student.amizoneplus.ui.pets.hangPoints
 import com.student.amizoneplus.ui.pets.perch
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.animation.togetherWith
@@ -3166,14 +3440,39 @@ fun <V> Segmented(options: List<Pair<V, String>>, value: V, onChange: (V) -> Uni
     BoxWithConstraints(modifier.fillMaxWidth().height(52.dp).background(bg, RoundedCornerShape(50)).padding(4.dp)) {
         val segW = maxWidth / options.size
         val idx = options.indexOfFirst { it.first == value }.coerceAtLeast(0)
-        val x by animateDpAsState(segW * idx, Motion.spring(), label = "seg")
-        Box(Modifier.offset(x = x).width(segW).fillMaxSize().background(active, RoundedCornerShape(50)))
-        Row(Modifier.fillMaxSize()) {
+        val segPx = with(androidx.compose.ui.platform.LocalDensity.current) { segW.toPx() }
+        val scope = rememberCoroutineScope()
+        val pos = remember { Animatable(segPx * idx) }
+        var dragging by remember { mutableStateOf(false) }
+        var dragX by remember { mutableFloatStateOf(0f) }
+        LaunchedEffect(idx, segPx) { if (!dragging) pos.animateTo(segPx * idx, androidx.compose.animation.core.spring(0.78f, 420f)) }
+        val idxNow by rememberUpdatedState(idx)
+        val valueNow by rememberUpdatedState(onChange)
+        val grow by animateFloatAsState(if (dragging) 1.04f else 1f,
+            if (dragging) androidx.compose.animation.core.spring(0.7f, 500f) else androidx.compose.animation.core.spring(0.45f, 380f), label = "seggrow")
+        val shown = if (dragging) (dragX / segPx).roundToInt().coerceIn(0, options.lastIndex) else idx
+        Box(
+            Modifier.offset { IntOffset((if (dragging) dragX else pos.value).roundToInt(), 0) }.width(segW).fillMaxSize()
+                .graphicsLayer { scaleX = grow; scaleY = grow }
+                .background(active, RoundedCornerShape(50)),
+        )
+        Row(Modifier.fillMaxSize().pointerInput(segPx) {
+            detectHorizontalDragGestures(
+                onDragStart = { dragging = true; dragX = segPx * idxNow; haptics.press() },
+                onDragEnd = { dragging = false; scope.launch { pos.snapTo(dragX); pos.animateTo(segPx * idxNow, androidx.compose.animation.core.spring(0.6f, 380f)) } },
+                onDragCancel = { dragging = false },
+            ) { ch, dx ->
+                ch.consume()
+                dragX = (dragX + dx).coerceIn(0f, segPx * options.lastIndex)
+                val t = (dragX / segPx).roundToInt().coerceIn(0, options.lastIndex)
+                if (t != idxNow) { haptics.tick(); valueNow(options[t].first) }
+            }
+        }) {
             options.forEach { (v, label) ->
                 Box(
                     Modifier.weight(1f).fillMaxSize().clickable(remember { MutableInteractionSource() }, null) { if (v != value) { haptics.select(); onChange(v) } },
                     contentAlignment = Alignment.Center,
-                ) { Caps(label, if (v == value) P.onCream else P.sub) }
+                ) { Caps(label, if (options.indexOfFirst { it.first == v } == shown) P.onCream else P.sub) }
             }
         }
     }
@@ -4476,6 +4775,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -4679,7 +4982,24 @@ fun BottomNav(route: Route, onChange: (Route) -> Unit, hazeState: HazeState, mod
     val pad = 6.dp
     val slot = (pillW - pad * 2) / TABS.size
     val idx = TABS.indexOfFirst { it.first == route }.coerceAtLeast(0)
-    val x by animateDpAsState(slot * idx, Motion.spring(), label = "navx")
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val slotPx = with(density) { slot.toPx() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // Tile position (px). Follows the finger while dragging, springs to the tab otherwise.
+    val tile = remember { androidx.compose.animation.core.Animatable(slotPx * idx) }
+    var dragging by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var dragX by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    LaunchedEffect(idx, slotPx) { if (!dragging) tile.animateTo(slotPx * idx, androidx.compose.animation.core.spring(0.78f, 420f)) }
+    val idxNow by androidx.compose.runtime.rememberUpdatedState(idx)
+    val onChangeNow by androidx.compose.runtime.rememberUpdatedState(onChange)
+    // Grows while held, but never past the screen edges; bounces back on release.
+    val maxGrow = ((screenW - 8.dp) / pillW).coerceIn(1f, 1.07f)
+    val grow by androidx.compose.animation.core.animateFloatAsState(
+        if (dragging) maxGrow else 1f,
+        if (dragging) androidx.compose.animation.core.spring(0.7f, 500f) else androidx.compose.animation.core.spring(0.42f, 380f),
+        label = "navgrow",
+    )
+    val shown = if (dragging) (dragX / slotPx).roundToInt().coerceIn(0, TABS.lastIndex) else idx
 
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         // Progressive blur: strongest at the bottom, fading to nothing above the bar.
@@ -4699,13 +5019,30 @@ fun BottomNav(route: Route, onChange: (Route) -> Unit, hazeState: HazeState, mod
         Box(
             Modifier.padding(bottom = maxOf(gap, navBottom)).size(pillW, L.nav)
                 .onGloballyPositioned { pets?.navTop = it.boundsInWindow().top }
+                .graphicsLayer {
+                    scaleX = grow; scaleY = 1f + (grow - 1f) * 1.4f
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f) // grows upward, never off the bottom
+                }
+                .pointerInput(slotPx) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragging = true; dragX = slotPx * idxNow; haptics.press() },
+                        onDragEnd = { dragging = false; scope.launch { tile.snapTo(dragX); tile.animateTo(slotPx * idxNow, androidx.compose.animation.core.spring(0.6f, 380f)) } },
+                        onDragCancel = { dragging = false; scope.launch { tile.animateTo(slotPx * idxNow) } },
+                    ) { ch, dx ->
+                        ch.consume()
+                        dragX = (dragX + dx).coerceIn(0f, slotPx * TABS.lastIndex)
+                        val t = (dragX / slotPx).roundToInt().coerceIn(0, TABS.lastIndex)
+                        if (t != idxNow) { haptics.tick(); onChangeNow(TABS[t].first) }
+                    }
+                }
                 .background(P.nav.copy(alpha = 0.92f), RoundedCornerShape(L.nav / 2)).padding(pad),
         ) {
             // The tile slides between tabs.
-            Box(Modifier.offset(x = x + 3.dp).size(slot - 6.dp, L.nav - pad * 2).background(P.sky, RoundedCornerShape((L.nav - pad * 2) / 2)))
+            Box(Modifier.offset { androidx.compose.ui.unit.IntOffset(((if (dragging) dragX else tile.value) + 3.dp.toPx()).roundToInt(), 0) }
+                .size(slot - 6.dp, L.nav - pad * 2).background(P.sky, RoundedCornerShape((L.nav - pad * 2) / 2)))
             Row(Modifier.fillMaxSize()) {
                 TABS.forEachIndexed { i, (r, icon) ->
-                    val tint by animateColorAsState(if (i == idx) P.onHero else Color(0xFFDCDCE0), label = "navtint")
+                    val tint by animateColorAsState(if (i == shown) P.onHero else Color(0xFFDCDCE0), label = "navtint")
                     Box(
                         Modifier.width(slot).fillMaxSize()
                             .onGloballyPositioned { c -> pets?.navTabs?.set(r, c.boundsInWindow()) }
@@ -5086,6 +5423,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = UiState(status = Status.SignedIn, data = storage.loadCache(), settings = settings, username = creds.username)
             refresh()
             RefreshWorker.schedule(app)
+            com.student.amizoneplus.work.KeepAliveWorker.schedule(app)
         }
     }
 
@@ -5130,6 +5468,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         storage.saveCredentials(c)
         _state.update { it.copy(status = Status.SignedIn, username = c.username, error = null) }
         RefreshWorker.schedule(getApplication())
+        com.student.amizoneplus.work.KeepAliveWorker.schedule(getApplication())
         refresh()
     }
 
@@ -5154,6 +5493,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun signOut() {
         RefreshWorker.cancel(getApplication())
+        com.student.amizoneplus.work.KeepAliveWorker.cancel(getApplication())
         storage.clearAll()
         CookieManager.getInstance().removeAllCookies(null)
         _state.value = UiState(status = Status.SignedOut)
@@ -5909,7 +6249,7 @@ fun TodayScreen(s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges
     val today = data?.schedule.orEmpty().filter { sameDay(it.startMs, now) }
     val upcoming = data?.schedule.orEmpty().firstOrNull { it.endMs > now }
     val live = upcoming != null && upcoming.startMs <= now
-    val nextExam = data?.exams?.exams.orEmpty().firstOrNull { (it.timeMs ?: 0) > now }
+    val nextExam = data?.exams?.exams.orEmpty().firstOrNull { (it.timeMs ?: 0) + com.student.amizoneplus.logic.EXAM_LENGTH_MS > now }
     val name = data?.profile?.name ?: s.username ?: ""
     val first = name.substringBefore(' ')
     val badges = data?.let { earnedBadges(it, t) }.orEmpty()
@@ -5966,7 +6306,8 @@ fun TodayScreen(s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges
                             }
                             nextExam != null -> {
                                 T("EXAM: ${nextExam.name.uppercase()}", Type.headline.copy(fontSize = 27.sp()), maxLines = 2)
-                                T("${nextExam.mode} · in ${ceil(((nextExam.timeMs ?: now) - now) / 86_400_000.0).toInt()} days", Type.body, sub = true, modifier = Modifier.padding(top = 8.dp))
+                                T(listOfNotNull(nextExam.mode.ifBlank { null }, nextExam.timeMs?.let { com.student.amizoneplus.logic.examWhen(it, now) }).joinToString(" · "),
+                                    Type.body, sub = true, modifier = Modifier.padding(top = 8.dp))
                             }
                             low.isNotEmpty() -> {
                                 T("ATTENDANCE AT RISK", Type.headline.copy(fontSize = 27.sp()))
@@ -6680,8 +7021,9 @@ fun ScheduleScreen(s: UiState, onRefresh: () -> Unit, banner: (@Composable () ->
                     s.data?.exams?.title?.let { T(it.uppercase(), Type.caption, sub = true) }
                     if (exams.isEmpty()) T("No exams scheduled right now.", Type.body, sub = true, align = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 32.dp))
                     exams.forEachIndexed { i, e ->
-                        val past = (e.timeMs ?: Long.MAX_VALUE) < now
-                        val left = e.timeMs?.let { ceil((it - now) / 86_400_000.0).toInt() }
+                        val past = (e.timeMs ?: Long.MAX_VALUE) + com.student.amizoneplus.logic.EXAM_LENGTH_MS < now
+                        val live = e.timeMs?.let { now >= it && !past } == true
+                        val left = e.timeMs?.let { com.student.amizoneplus.logic.daysUntil(it, now) }
                         Rise(i) {
                             Card(color = P.card) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -6700,7 +7042,7 @@ fun ScheduleScreen(s: UiState, onRefresh: () -> Unit, banner: (@Composable () ->
                                         if (e.location.isNotEmpty()) T(e.location, Type.caption, sub = true, modifier = Modifier.padding(top = 2.dp))
                                         Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             if (e.mode.isNotEmpty()) Chip(e.mode, Tone.Lav)
-                                            if (!past && left != null) Chip(when { left <= 0 -> "Today"; left == 1 -> "Tomorrow"; else -> "In $left days" },
+                                            if (!past && left != null) Chip(when { live -> "Now"; left <= 0 -> "Today"; left == 1 -> "Tomorrow"; else -> "In $left days" },
                                                 if (left <= 3) Tone.Bad else Tone.Sage)
                                         }
                                     }
@@ -7784,6 +8126,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
@@ -7956,15 +8302,50 @@ private fun Main(vm: AppViewModel, s: UiState) {
           Box(Modifier.fillMaxSize().hazeSource(menuHaze)) {
             // Everything under the nav is a blur source for the nav's progressive blur.
             Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
-                Box(Modifier.fillMaxSize().graphicsLayer {
-                    val sc = 1f - 0.04f * z.value
-                    scaleX = sc; scaleY = sc
-                }) {
+                // Swipe left / right on any free space to move between tabs. Rows that scroll
+                // sideways (day chips, the Timetable/Exams toggle, the nav) keep their own swipes.
+                val swipe = remember { Animatable(0f) }
+                val routeNow by androidx.compose.runtime.rememberUpdatedState(route)
+                val swipeEnabled = !menuMounted && web == null && !gallery
+                Box(Modifier.fillMaxSize()
+                    .pointerInput(swipeEnabled) {
+                        if (!swipeEnabled) return@pointerInput
+                        var total = 0f
+                        val threshold = 72.dp.toPx()
+                        detectHorizontalDragGestures(
+                            onDragStart = { total = 0f },
+                            onDragCancel = { scope.launch { swipe.animateTo(0f, androidx.compose.animation.core.spring(0.8f, 320f)) } },
+                            onDragEnd = {
+                                val tabs = Route.entries
+                                val i = tabs.indexOf(routeNow)
+                                val next = when {
+                                    total < -threshold && i < tabs.lastIndex -> tabs[i + 1]
+                                    total > threshold && i > 0 -> tabs[i - 1]
+                                    else -> null
+                                }
+                                if (next != null) { haptics.select(); go(next) }
+                                scope.launch { swipe.animateTo(0f, androidx.compose.animation.core.spring(0.8f, 320f)) }
+                            },
+                        ) { ch, dx ->
+                            ch.consume()
+                            total += dx
+                            val i = Route.entries.indexOf(routeNow)
+                            val atEdge = (i == 0 && total > 0) || (i == Route.entries.lastIndex && total < 0)
+                            scope.launch { swipe.snapTo(total * (if (atEdge) 0.1f else 0.28f)) }
+                        }
+                    }
+                    .graphicsLayer {
+                        val sc = 1f - 0.04f * z.value
+                        scaleX = sc; scaleY = sc
+                        translationX = swipe.value
+                    }) {
                     AnimatedContent(
                         route,
                         transitionSpec = {
-                            (fadeIn(tween(260, easing = Motion.emphasized)) + slideInVertically(tween(380, easing = Motion.emphasized)) { it / 80 }) togetherWith
-                                fadeOut(tween(140))
+                            // Slides the way the tabs are laid out: right-hand tabs come in from the right.
+                            val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                            (fadeIn(tween(240, easing = Motion.emphasized)) + slideInHorizontally(tween(420, easing = Motion.emphasized)) { dir * it / 7 }) togetherWith
+                                (fadeOut(tween(160)) + slideOutHorizontally(tween(320, easing = Motion.emphasized)) { -dir * it / 10 })
                         },
                         label = "route",
                     ) { r ->

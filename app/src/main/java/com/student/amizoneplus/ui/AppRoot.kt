@@ -9,6 +9,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
@@ -181,15 +185,50 @@ private fun Main(vm: AppViewModel, s: UiState) {
           Box(Modifier.fillMaxSize().hazeSource(menuHaze)) {
             // Everything under the nav is a blur source for the nav's progressive blur.
             Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
-                Box(Modifier.fillMaxSize().graphicsLayer {
-                    val sc = 1f - 0.04f * z.value
-                    scaleX = sc; scaleY = sc
-                }) {
+                // Swipe left / right on any free space to move between tabs. Rows that scroll
+                // sideways (day chips, the Timetable/Exams toggle, the nav) keep their own swipes.
+                val swipe = remember { Animatable(0f) }
+                val routeNow by androidx.compose.runtime.rememberUpdatedState(route)
+                val swipeEnabled = !menuMounted && web == null && !gallery
+                Box(Modifier.fillMaxSize()
+                    .pointerInput(swipeEnabled) {
+                        if (!swipeEnabled) return@pointerInput
+                        var total = 0f
+                        val threshold = 72.dp.toPx()
+                        detectHorizontalDragGestures(
+                            onDragStart = { total = 0f },
+                            onDragCancel = { scope.launch { swipe.animateTo(0f, androidx.compose.animation.core.spring(0.8f, 320f)) } },
+                            onDragEnd = {
+                                val tabs = Route.entries
+                                val i = tabs.indexOf(routeNow)
+                                val next = when {
+                                    total < -threshold && i < tabs.lastIndex -> tabs[i + 1]
+                                    total > threshold && i > 0 -> tabs[i - 1]
+                                    else -> null
+                                }
+                                if (next != null) { haptics.select(); go(next) }
+                                scope.launch { swipe.animateTo(0f, androidx.compose.animation.core.spring(0.8f, 320f)) }
+                            },
+                        ) { ch, dx ->
+                            ch.consume()
+                            total += dx
+                            val i = Route.entries.indexOf(routeNow)
+                            val atEdge = (i == 0 && total > 0) || (i == Route.entries.lastIndex && total < 0)
+                            scope.launch { swipe.snapTo(total * (if (atEdge) 0.1f else 0.28f)) }
+                        }
+                    }
+                    .graphicsLayer {
+                        val sc = 1f - 0.04f * z.value
+                        scaleX = sc; scaleY = sc
+                        translationX = swipe.value
+                    }) {
                     AnimatedContent(
                         route,
                         transitionSpec = {
-                            (fadeIn(tween(260, easing = Motion.emphasized)) + slideInVertically(tween(380, easing = Motion.emphasized)) { it / 80 }) togetherWith
-                                fadeOut(tween(140))
+                            // Slides the way the tabs are laid out: right-hand tabs come in from the right.
+                            val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                            (fadeIn(tween(240, easing = Motion.emphasized)) + slideInHorizontally(tween(420, easing = Motion.emphasized)) { dir * it / 7 }) togetherWith
+                                (fadeOut(tween(160)) + slideOutHorizontally(tween(320, easing = Motion.emphasized)) { -dir * it / 10 })
                         },
                         label = "route",
                     ) { r ->

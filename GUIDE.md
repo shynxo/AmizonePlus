@@ -84,6 +84,7 @@ compileSdk/targetSdk 37 · minSdk 26 (Android 8+). Gradle JDK = Android Studio's
 |---|---|
 | `Attendance.kt` | %, "can skip / must attend", and the **credits × 15** semester plan |
 | `Insights.kt` | Attendance by weekday, present streak, badges |
+| `When.kt` | Calendar-day countdowns for exams ("today at 10:00", "tomorrow", "in 3 days", "happening now") |
 
 ### Background (`work/`)
 | File | Purpose |
@@ -91,6 +92,8 @@ compileSdk/targetSdk 37 · minSdk 26 (Android 8+). Gradle JDK = Android Studio's
 | `Notifier.kt` | Notification channels, low-attendance alerts, class & exam reminders (AlarmManager) |
 | `ReminderReceiver.kt` | Shows a reminder when its alarm fires |
 | `RefreshWorker.kt` | WorkManager job refreshing data about every 6 hours |
+| `KeepAliveWorker.kt` | Tiny signed-in request every ~15 min so the Amizone session doesn't expire from inactivity (never signs in itself) |
+| `NotifArt.kt` | Draws reminder notifications as app-styled cards with a pixel pet (sleeping the night before an exam) |
 | `AmizoneApp.kt` *(root)* | Creates notification channels at app start |
 
 ### UI

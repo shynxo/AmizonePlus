@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Lets exam reminders fire on time (8 pm the night before) when the phone allows it -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Lets the in-app updater hand a downloaded update to Android's installer -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 

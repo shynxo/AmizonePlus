@@ -9,6 +9,11 @@ import androidx.compose.animation.core.tween
 import com.student.amizoneplus.ui.pets.hangPoints
 import com.student.amizoneplus.ui.pets.perch
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.animation.togetherWith
@@ -765,14 +770,39 @@ fun <V> Segmented(options: List<Pair<V, String>>, value: V, onChange: (V) -> Uni
     BoxWithConstraints(modifier.fillMaxWidth().height(52.dp).background(bg, RoundedCornerShape(50)).padding(4.dp)) {
         val segW = maxWidth / options.size
         val idx = options.indexOfFirst { it.first == value }.coerceAtLeast(0)
-        val x by animateDpAsState(segW * idx, Motion.spring(), label = "seg")
-        Box(Modifier.offset(x = x).width(segW).fillMaxSize().background(active, RoundedCornerShape(50)))
-        Row(Modifier.fillMaxSize()) {
+        val segPx = with(androidx.compose.ui.platform.LocalDensity.current) { segW.toPx() }
+        val scope = rememberCoroutineScope()
+        val pos = remember { Animatable(segPx * idx) }
+        var dragging by remember { mutableStateOf(false) }
+        var dragX by remember { mutableFloatStateOf(0f) }
+        LaunchedEffect(idx, segPx) { if (!dragging) pos.animateTo(segPx * idx, androidx.compose.animation.core.spring(0.78f, 420f)) }
+        val idxNow by rememberUpdatedState(idx)
+        val valueNow by rememberUpdatedState(onChange)
+        val grow by animateFloatAsState(if (dragging) 1.04f else 1f,
+            if (dragging) androidx.compose.animation.core.spring(0.7f, 500f) else androidx.compose.animation.core.spring(0.45f, 380f), label = "seggrow")
+        val shown = if (dragging) (dragX / segPx).roundToInt().coerceIn(0, options.lastIndex) else idx
+        Box(
+            Modifier.offset { IntOffset((if (dragging) dragX else pos.value).roundToInt(), 0) }.width(segW).fillMaxSize()
+                .graphicsLayer { scaleX = grow; scaleY = grow }
+                .background(active, RoundedCornerShape(50)),
+        )
+        Row(Modifier.fillMaxSize().pointerInput(segPx) {
+            detectHorizontalDragGestures(
+                onDragStart = { dragging = true; dragX = segPx * idxNow; haptics.press() },
+                onDragEnd = { dragging = false; scope.launch { pos.snapTo(dragX); pos.animateTo(segPx * idxNow, androidx.compose.animation.core.spring(0.6f, 380f)) } },
+                onDragCancel = { dragging = false },
+            ) { ch, dx ->
+                ch.consume()
+                dragX = (dragX + dx).coerceIn(0f, segPx * options.lastIndex)
+                val t = (dragX / segPx).roundToInt().coerceIn(0, options.lastIndex)
+                if (t != idxNow) { haptics.tick(); valueNow(options[t].first) }
+            }
+        }) {
             options.forEach { (v, label) ->
                 Box(
                     Modifier.weight(1f).fillMaxSize().clickable(remember { MutableInteractionSource() }, null) { if (v != value) { haptics.select(); onChange(v) } },
                     contentAlignment = Alignment.Center,
-                ) { Caps(label, if (v == value) P.onCream else P.sub) }
+                ) { Caps(label, if (options.indexOfFirst { it.first == v } == shown) P.onCream else P.sub) }
             }
         }
     }

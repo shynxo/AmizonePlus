@@ -106,7 +106,7 @@ fun TodayScreen(s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges
     val today = data?.schedule.orEmpty().filter { sameDay(it.startMs, now) }
     val upcoming = data?.schedule.orEmpty().firstOrNull { it.endMs > now }
     val live = upcoming != null && upcoming.startMs <= now
-    val nextExam = data?.exams?.exams.orEmpty().firstOrNull { (it.timeMs ?: 0) > now }
+    val nextExam = data?.exams?.exams.orEmpty().firstOrNull { (it.timeMs ?: 0) + com.student.amizoneplus.logic.EXAM_LENGTH_MS > now }
     val name = data?.profile?.name ?: s.username ?: ""
     val first = name.substringBefore(' ')
     val badges = data?.let { earnedBadges(it, t) }.orEmpty()
@@ -163,7 +163,8 @@ fun TodayScreen(s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges
                             }
                             nextExam != null -> {
                                 T("EXAM: ${nextExam.name.uppercase()}", Type.headline.copy(fontSize = 27.sp()), maxLines = 2)
-                                T("${nextExam.mode} · in ${ceil(((nextExam.timeMs ?: now) - now) / 86_400_000.0).toInt()} days", Type.body, sub = true, modifier = Modifier.padding(top = 8.dp))
+                                T(listOfNotNull(nextExam.mode.ifBlank { null }, nextExam.timeMs?.let { com.student.amizoneplus.logic.examWhen(it, now) }).joinToString(" · "),
+                                    Type.body, sub = true, modifier = Modifier.padding(top = 8.dp))
                             }
                             low.isNotEmpty() -> {
                                 T("ATTENDANCE AT RISK", Type.headline.copy(fontSize = 27.sp()))
