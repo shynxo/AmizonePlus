@@ -119,21 +119,20 @@ private fun Main(vm: AppViewModel, s: UiState) {
     val z = remember { Animatable(0f) }
     // The menu blurs everything below it: screens, status bar and nav (with their own blurs).
     val menuHaze = rememberHazeState()
+    // Backdrop (blur + slight ease-back of the screen) on one soft, no-overshoot spring;
+    // the rows bounce in on their own springs inside the overlay.
     fun openMenu() {
         if (menuOpen) return
         haptics.expand(); menuMounted = true; menuOpen = true
-        scope.launch { m.animateTo(1f, tween(MENU_OPEN_MS, easing = LinearEasing)) }
-        scope.launch { z.animateTo(1f, tween(620, easing = Motion.emphasized)) }
+        scope.launch { z.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 170f)) }
     }
     fun closeMenu(after: (() -> Unit)? = null) {
         if (!menuOpen) { after?.invoke(); return }
         haptics.collapse(); menuOpen = false
-        // Blur holds while the rows fold away, then falls off at the end.
         scope.launch {
-            // Rows fold quickly; the background eases back over its usual 0.5 s. Unmount after both.
-            val bg = launch { z.animateTo(0f, tween(500, easing = Motion.accelerate)) }
-            m.animateTo(0f, tween(MENU_CLOSE_MS, easing = LinearEasing))
-            bg.join()
+            // Rows fold back first (~0.3 s), the backdrop follows and settles; then unmount.
+            kotlinx.coroutines.delay(120)
+            z.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 260f))
             if (!menuOpen) menuMounted = false
             after?.invoke()
         }
@@ -218,7 +217,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
                         }
                     }
                     .graphicsLayer {
-                        val sc = 1f - 0.04f * z.value
+                        val sc = 1f - 0.03f * z.value
                         scaleX = sc; scaleY = sc
                         translationX = swipe.value
                     }) {
@@ -250,7 +249,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
             // Pets roam above the screens and the nav (so they can be carried onto a tab).
             com.student.amizoneplus.ui.pets.PetLayer(pets, s.settings.pets, active = !menuMounted && web == null && !gallery && s.celebrate == null)
 
-            if (menuMounted) QuickMenuOverlay({ m.value }, { z.value }, menuHaze, { closeMenu() }) { path, title ->
+            if (menuMounted) QuickMenuOverlay(menuOpen, { z.value }, menuHaze, { closeMenu() }) { path, title ->
                 // Sections the app already shows natively open in the app's own UI.
                 when (path.lowercase()) {
                     "/examination/examschedule" -> { scheduleFocus = "exams"; go(Route.Schedule) }

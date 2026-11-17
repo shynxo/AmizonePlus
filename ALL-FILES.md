@@ -7799,6 +7799,7 @@ private fun ResultsSheet(s: UiState, onClose: () -> Unit) {
 package com.student.amizoneplus.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7843,6 +7844,7 @@ import com.student.amizoneplus.ui.theme.LocalHaptics
 import com.student.amizoneplus.ui.theme.P
 import com.student.amizoneplus.ui.theme.Type
 import kotlin.math.pow
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.draw.drawBehind
@@ -7922,7 +7924,7 @@ private fun easeOut(t: Float) = 1f - (1f - t).pow(4)
 fun screenExit(m: Float) = (m * MENU_OPEN_MS / 300f).coerceIn(0f, 1f).let { easeOut(it) }
 
 @Composable
-fun QuickMenuOverlay(progress: () -> Float, fade: () -> Float, hazeState: dev.chrisbanes.haze.HazeState, onClose: () -> Unit, openPage: (String, String) -> Unit) {
+fun QuickMenuOverlay(open: Boolean, fade: () -> Float, hazeState: dev.chrisbanes.haze.HazeState, onClose: () -> Unit, openPage: (String, String) -> Unit) {
     val haptics = LocalHaptics.current
     var openGroup by remember { mutableStateOf<String?>(null) }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -7933,17 +7935,33 @@ fun QuickMenuOverlay(progress: () -> Float, fade: () -> Float, hazeState: dev.ch
     var rowsBottom by remember { mutableFloatStateOf(0f) }
     var screenH by remember { mutableFloatStateOf(0f) }
     val fadeLen = with(density) { 150.dp.toPx() }
-    val edgeTarget = if (openGroup != null || rowsBottom <= 0f) screenH + fadeLen else rowsBottom + with(density) { 12.dp.toPx() }
     // The edge starts at the header and travels down with the rows as they unfurl.
     val headerBottom = with(density) { (statusTop + L.page + L.header).toPx() }
-    val edgeAnim = remember { androidx.compose.animation.core.Animatable(headerBottom) }
-    var first by remember { mutableStateOf(true) }
-    LaunchedEffect(edgeTarget) {
-        if (rowsBottom <= 0f || screenH <= 0f) return@LaunchedEffect
-        edgeAnim.animateTo(edgeTarget, tween(if (first) MENU_OPEN_MS else 560, easing = com.student.amizoneplus.ui.theme.Motion.emphasized))
-        first = false
+    // Each row has its own spring: in with a soft bounce, staggered top to bottom;
+    // out quickly in reverse order with no bounce.
+    val rows = remember { List(MENU_GROUPS.size) { androidx.compose.animation.core.Animatable(0f) } }
+    LaunchedEffect(open) {
+        rows.forEachIndexed { i, a ->
+            launch {
+                if (open) {
+                    kotlinx.coroutines.delay(30L + i * 42L)
+                    a.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.62f, stiffness = 320f))
+                } else {
+                    kotlinx.coroutines.delay((rows.size - 1 - i) * 22L)
+                    a.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 900f))
+                }
+            }
+        }
     }
-    val edge = edgeAnim.value
+    // The blur edge rides with the last row, so blur and options arrive together; opening
+    // a group spreads it over the whole screen on a soft spring.
+    val spread by androidx.compose.animation.core.animateFloatAsState(
+        if (openGroup != null) 1f else 0f, androidx.compose.animation.core.spring(dampingRatio = 0.9f, stiffness = 220f), label = "spread",
+    )
+    val lastRow = rows.last().value
+    val restEdge = if (rowsBottom > 0f) rowsBottom + with(density) { 12.dp.toPx() } else headerBottom
+    val rowsEdge = headerBottom + (restEdge - headerBottom) * lastRow.coerceAtLeast(0f)
+    val edge = rowsEdge + ((screenH + fadeLen) - rowsEdge) * spread
 
     Box(Modifier.fillMaxSize()) {
         // The live app, blurred where the menu is: full strength down to the last row,
@@ -7980,7 +7998,10 @@ fun QuickMenuOverlay(progress: () -> Float, fade: () -> Float, hazeState: dev.ch
         // so they appear to slide out from behind it.
         Box(Modifier.fillMaxSize().padding(top = statusTop + L.page + L.header).clipToBounds()) {
             Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                Modifier.fillMaxSize()
+                    // Tap anywhere that isn't a card to close the menu.
+                    .clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { onClose() }
+                    .verticalScroll(rememberScrollState())
                     .padding(top = L.joint, start = L.page, end = L.page, bottom = navBottom + 120.dp),
                 verticalArrangement = Arrangement.spacedBy(L.block),
             ) {
@@ -7990,9 +8011,11 @@ fun QuickMenuOverlay(progress: () -> Float, fade: () -> Float, hazeState: dev.ch
                 ) {
                 MENU_GROUPS.forEachIndexed { i, g ->
                     Box(Modifier.graphicsLayer {
-                        val t = ((progress() * MENU_OPEN_MS - i * ROW_STAGGER) / ROW_DUR).coerceIn(0f, 1f)
-                        alpha = (t * 2.2f).coerceIn(0f, 1f)
-                        translationY = -(i + 1) * rowStep.toPx() * 0.92f * (1f - easeOut(t))
+                        val t = rows[i].value // springs past 1 a little: the bounce
+                        alpha = (t * 2f).coerceIn(0f, 1f)
+                        translationY = -(i + 1) * rowStep.toPx() * 0.9f * (1f - t)
+                        val sc = 0.94f + 0.06f * t
+                        scaleX = sc; scaleY = sc
                     }) {
                         UnfoldCard(
                             open = openGroup == g.title,
@@ -8030,7 +8053,7 @@ fun QuickMenuOverlay(progress: () -> Float, fade: () -> Float, hazeState: dev.ch
         // The real header card on top; swipe up on it to close.
         HeaderInk(
             Modifier.padding(top = statusTop + L.page, start = L.page, end = L.page)
-                .graphicsLayer { alpha = (progress() * MENU_OPEN_MS / 240f).coerceIn(0f, 1f) }
+                .graphicsLayer { alpha = fade().coerceIn(0f, 1f) }
                 .pointerInput(Unit) {
                 var total = 0f
                 detectVerticalDragGestures(onDragStart = { total = 0f }, onDragEnd = { if (total < -36.dp.toPx()) onClose() }) { _, dy -> total += dy }
@@ -8326,21 +8349,20 @@ private fun Main(vm: AppViewModel, s: UiState) {
     val z = remember { Animatable(0f) }
     // The menu blurs everything below it: screens, status bar and nav (with their own blurs).
     val menuHaze = rememberHazeState()
+    // Backdrop (blur + slight ease-back of the screen) on one soft, no-overshoot spring;
+    // the rows bounce in on their own springs inside the overlay.
     fun openMenu() {
         if (menuOpen) return
         haptics.expand(); menuMounted = true; menuOpen = true
-        scope.launch { m.animateTo(1f, tween(MENU_OPEN_MS, easing = LinearEasing)) }
-        scope.launch { z.animateTo(1f, tween(620, easing = Motion.emphasized)) }
+        scope.launch { z.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 170f)) }
     }
     fun closeMenu(after: (() -> Unit)? = null) {
         if (!menuOpen) { after?.invoke(); return }
         haptics.collapse(); menuOpen = false
-        // Blur holds while the rows fold away, then falls off at the end.
         scope.launch {
-            // Rows fold quickly; the background eases back over its usual 0.5 s. Unmount after both.
-            val bg = launch { z.animateTo(0f, tween(500, easing = Motion.accelerate)) }
-            m.animateTo(0f, tween(MENU_CLOSE_MS, easing = LinearEasing))
-            bg.join()
+            // Rows fold back first (~0.3 s), the backdrop follows and settles; then unmount.
+            kotlinx.coroutines.delay(120)
+            z.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 260f))
             if (!menuOpen) menuMounted = false
             after?.invoke()
         }
@@ -8425,7 +8447,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
                         }
                     }
                     .graphicsLayer {
-                        val sc = 1f - 0.04f * z.value
+                        val sc = 1f - 0.03f * z.value
                         scaleX = sc; scaleY = sc
                         translationX = swipe.value
                     }) {
@@ -8457,7 +8479,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
             // Pets roam above the screens and the nav (so they can be carried onto a tab).
             com.student.amizoneplus.ui.pets.PetLayer(pets, s.settings.pets, active = !menuMounted && web == null && !gallery && s.celebrate == null)
 
-            if (menuMounted) QuickMenuOverlay({ m.value }, { z.value }, menuHaze, { closeMenu() }) { path, title ->
+            if (menuMounted) QuickMenuOverlay(menuOpen, { z.value }, menuHaze, { closeMenu() }) { path, title ->
                 // Sections the app already shows natively open in the app's own UI.
                 when (path.lowercase()) {
                     "/examination/examschedule" -> { scheduleFocus = "exams"; go(Route.Schedule) }
