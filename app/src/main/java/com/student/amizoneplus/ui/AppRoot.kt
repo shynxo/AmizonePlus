@@ -253,7 +253,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
                 }
             }
             com.student.amizoneplus.ui.shell.StatusBlur(hazeState)
-            com.student.amizoneplus.ui.shell.BottomNav(route, ::go, hazeState)
+            com.student.amizoneplus.ui.shell.BottomNav(route, ::go, hazeState, onBack = { go(Route.Today) })
           }
             // Pets roam above the screens and the nav (so they can be carried onto a tab).
             com.student.amizoneplus.ui.pets.PetLayer(pets, s.settings.pets, active = !menuMounted && web == null && !gallery && s.celebrate == null)

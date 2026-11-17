@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -134,21 +135,25 @@ fun MoreScreen(
     val latest = sems.lastOrNull()
     val st = s.settings
 
+    // The whole hero band is the shared element: it's what the avatar on Home grows into,
+    // so the shape must match the avatar's at one end and read as a normal hero at the other.
+    val heroShape = RoundedCornerShape(32.dp)
+    val heroMod = if (shared != null && anim != null) with(shared) {
+        Modifier.sharedBounds(
+            rememberSharedContentState("avatarMorph"), anim,
+            clipInOverlayDuringTransition = OverlayClip(heroShape),
+        )
+    } else Modifier
+    val screenH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
     HeroPage(
         heroColor = P.sun,
         refreshing = s.refreshing,
         onRefresh = onRefresh,
         banner = banner,
+        heroModifier = heroMod.clip(heroShape).heightIn(min = screenH * 0.46f),
         hero = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Morphs from the avatar you tapped on Home, when that's how you got here.
-                val avatarMod = if (shared != null && anim != null) with(shared) {
-                    Modifier.sharedBounds(
-                        rememberSharedContentState("avatarMorph"), anim,
-                        clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(32.dp)),
-                    )
-                } else Modifier
-                Box(avatarMod) { com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp) }
+                com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp)
                 Box(Modifier.weight(1f))
                 com.student.amizoneplus.ui.shell.MenuButton()
             }
@@ -159,6 +164,7 @@ fun MoreScreen(
                 StatTile(latest?.let { "%.2f".format(it.cgpa) } ?: "—", "CGPA", P.onHero.copy(alpha = 0.08f), onClick = { results = true })
                 StatTile(latest?.let { "%.2f".format(it.sgpa) } ?: "—", "SGPA", P.onHero.copy(alpha = 0.08f), onClick = { results = true })
             }
+            Box(Modifier.weight(1f, fill = false))
         },
     ) {
         Rise(1) {

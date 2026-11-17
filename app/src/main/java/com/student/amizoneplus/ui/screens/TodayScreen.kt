@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.EventNote
 import androidx.compose.material.icons.outlined.Apps
@@ -131,12 +132,14 @@ fun TodayScreen(
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 // Tap your initials to open Settings / About — the circle morphs into that page's hero.
                 with(shared) {
+                    val morphShape = RoundedCornerShape(32.dp) // clamps to a circle at this size — matches at rest too, so there's no pop
                     Box(
                         Modifier
                             .sharedBounds(
                                 rememberSharedContentState("avatarMorph"), anim,
-                                clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(32.dp)),
+                                clipInOverlayDuringTransition = OverlayClip(morphShape),
                             )
+                            .clip(morphShape)
                             .press({ go(Route.More) }, Feel.Select, 0.88f),
                     ) { Avatar(name.ifEmpty { "A" }, P.sun, 52.dp) }
                 }

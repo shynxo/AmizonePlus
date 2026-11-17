@@ -4820,6 +4820,7 @@ package com.student.amizoneplus.ui.shell
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -4846,6 +4847,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Close
@@ -4962,6 +4964,7 @@ fun HeroPage(
     onRefresh: () -> Unit,
     banner: (@Composable () -> Unit)? = null,
     scroll: ScrollState = rememberScrollState(),
+    heroModifier: Modifier = Modifier, // lets a caller clip/share-bind the hero band itself
     hero: @Composable ColumnScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -4978,7 +4981,7 @@ fun HeroPage(
                 // Hero: scrolls at ~1/3 speed (parallax) and eases back; being part of the
                 // scroll column, its buttons receive taps.
                 Column(
-                    Modifier
+                    heroModifier
                         .fillMaxWidth()
                         .onSizeChanged { heroH = it.height.toFloat() }
                         .graphicsLayer {
@@ -5065,7 +5068,10 @@ val TABS = listOf(
 )
 
 @Composable
-fun BottomNav(route: Route, onChange: (Route) -> Unit, hazeState: HazeState, modifier: Modifier = Modifier, blurAlpha: () -> Float = { 1f }) {
+fun BottomNav(
+    route: Route, onChange: (Route) -> Unit, hazeState: HazeState, modifier: Modifier = Modifier,
+    blurAlpha: () -> Float = { 1f }, onBack: (() -> Unit)? = null,
+) {
     val haptics = LocalHaptics.current
     val pets = com.student.amizoneplus.ui.pets.LocalPetWorld.current
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -5076,6 +5082,8 @@ fun BottomNav(route: Route, onChange: (Route) -> Unit, hazeState: HazeState, mod
     val pillW = minOf(screenW - gap * 2, 520.dp)
     val pad = 6.dp
     val slot = (pillW - pad * 2) / TABS.size
+    // Settings/About has no tab of its own: the pill becomes a small square back button.
+    val isBack = TABS.none { it.first == route }
     val idx = TABS.indexOfFirst { it.first == route }.coerceAtLeast(0)
     val density = androidx.compose.ui.platform.LocalDensity.current
     val slotPx = with(density) { slot.toPx() }
@@ -5084,7 +5092,7 @@ fun BottomNav(route: Route, onChange: (Route) -> Unit, hazeState: HazeState, mod
     val tile = remember { androidx.compose.animation.core.Animatable(slotPx * idx) }
     var dragging by remember { androidx.compose.runtime.mutableStateOf(false) }
     var dragX by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    LaunchedEffect(idx, slotPx) { if (!dragging) tile.animateTo(slotPx * idx, androidx.compose.animation.core.spring(0.78f, 420f)) }
+    LaunchedEffect(idx, slotPx, isBack) { if (!dragging && !isBack) tile.animateTo(slotPx * idx, androidx.compose.animation.core.spring(0.78f, 420f)) }
     val idxNow by androidx.compose.runtime.rememberUpdatedState(idx)
     val onChangeNow by androidx.compose.runtime.rememberUpdatedState(onChange)
     // Grows while held, but never past the screen edges; bounces back on release.
@@ -5095,6 +5103,14 @@ fun BottomNav(route: Route, onChange: (Route) -> Unit, hazeState: HazeState, mod
         label = "navgrow",
     )
     val shown = if (dragging) (dragX / slotPx).roundToInt().coerceIn(0, TABS.lastIndex) else idx
+    // Shape morph: full pill <-> a small square, on the same bouncy-but-brisk spring as the rest of the app.
+    val navW by androidx.compose.animation.core.animateDpAsState(
+        if (isBack) L.nav else pillW, androidx.compose.animation.core.spring(dampingRatio = 0.68f, stiffness = 420f), label = "navShape",
+    )
+    val tabsAlpha by androidx.compose.animation.core.animateFloatAsState(if (isBack) 0f else 1f, tween(if (isBack) 110 else 220), label = "tabsAlpha")
+    val backAlpha by androidx.compose.animation.core.animateFloatAsState(
+        if (isBack) 1f else 0f, tween(if (isBack) 220 else 110, delayMillis = if (isBack) 90 else 0), label = "backAlpha",
+    )
 
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         // Progressive blur: strongest at the bottom, fading to nothing above the bar.
@@ -5112,40 +5128,56 @@ fun BottomNav(route: Route, onChange: (Route) -> Unit, hazeState: HazeState, mod
                 .background(Brush.verticalGradient(listOf(Color.Transparent, P.bg.copy(alpha = 0.5f)))),
         )
         Box(
-            Modifier.padding(bottom = maxOf(gap, navBottom)).size(pillW, L.nav)
+            Modifier.padding(bottom = maxOf(gap, navBottom)).size(navW, L.nav)
                 .onGloballyPositioned { pets?.navTop = it.boundsInWindow().top }
                 .graphicsLayer {
-                    scaleX = grow; scaleY = 1f + (grow - 1f) * 1.4f
-                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f) // grows upward, never off the bottom
-                }
-                .pointerInput(slotPx) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { dragging = true; dragX = slotPx * idxNow; haptics.press() },
-                        onDragEnd = { dragging = false; scope.launch { tile.snapTo(dragX); tile.animateTo(slotPx * idxNow, androidx.compose.animation.core.spring(0.6f, 380f)) } },
-                        onDragCancel = { dragging = false; scope.launch { tile.animateTo(slotPx * idxNow) } },
-                    ) { ch, dx ->
-                        ch.consume()
-                        dragX = (dragX + dx).coerceIn(0f, slotPx * TABS.lastIndex)
-                        val t = (dragX / slotPx).roundToInt().coerceIn(0, TABS.lastIndex)
-                        if (t != idxNow) { haptics.tick(); onChangeNow(TABS[t].first) }
+                    if (!isBack) {
+                        scaleX = grow; scaleY = 1f + (grow - 1f) * 1.4f
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f) // grows upward, never off the bottom
                     }
                 }
+                .then(
+                    if (isBack) {
+                        Modifier.press({ onBack?.invoke() }, Feel.Select, 0.9f)
+                    } else {
+                        Modifier.pointerInput(slotPx) {
+                            detectHorizontalDragGestures(
+                                onDragStart = { dragging = true; dragX = slotPx * idxNow; haptics.press() },
+                                onDragEnd = { dragging = false; scope.launch { tile.snapTo(dragX); tile.animateTo(slotPx * idxNow, androidx.compose.animation.core.spring(0.6f, 380f)) } },
+                                onDragCancel = { dragging = false; scope.launch { tile.animateTo(slotPx * idxNow) } },
+                            ) { ch, dx ->
+                                ch.consume()
+                                dragX = (dragX + dx).coerceIn(0f, slotPx * TABS.lastIndex)
+                                val t = (dragX / slotPx).roundToInt().coerceIn(0, TABS.lastIndex)
+                                if (t != idxNow) { haptics.tick(); onChangeNow(TABS[t].first) }
+                            }
+                        }
+                    },
+                )
                 .background(P.nav.copy(alpha = 0.92f), RoundedCornerShape(L.nav / 2)).padding(pad),
+            contentAlignment = Alignment.Center,
         ) {
-            // The tile slides between tabs.
-            Box(Modifier.offset { androidx.compose.ui.unit.IntOffset(((if (dragging) dragX else tile.value) + 3.dp.toPx()).roundToInt(), 0) }
-                .size(slot - 6.dp, L.nav - pad * 2).background(P.sky, RoundedCornerShape((L.nav - pad * 2) / 2)))
-            Row(Modifier.fillMaxSize()) {
-                TABS.forEachIndexed { i, (r, icon) ->
-                    val tint by animateColorAsState(if (i == shown) P.onHero else Color(0xFFDCDCE0), label = "navtint")
-                    Box(
-                        Modifier.width(slot).fillMaxSize()
-                            .onGloballyPositioned { c -> pets?.navTabs?.set(r, c.boundsInWindow()) }
-                            .press({ if (r != route) { haptics.select(); onChange(r) } }, Feel.None, 0.9f),
-                        contentAlignment = Alignment.Center,
-                    ) { NavIcon(icon, tint) }
+            // Tabs: the tile + icons, fading out as the pill shrinks into the back button.
+            if (tabsAlpha > 0.01f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = tabsAlpha }) {
+                Box(Modifier.offset { androidx.compose.ui.unit.IntOffset(((if (dragging) dragX else tile.value) + 3.dp.toPx()).roundToInt(), 0) }
+                    .size(slot - 6.dp, L.nav - pad * 2).background(P.sky, RoundedCornerShape((L.nav - pad * 2) / 2)))
+                Row(Modifier.fillMaxSize()) {
+                    TABS.forEachIndexed { i, (r, icon) ->
+                        val tint by animateColorAsState(if (i == shown) P.onHero else Color(0xFFDCDCE0), label = "navtint")
+                        Box(
+                            Modifier.width(slot).fillMaxSize()
+                                .onGloballyPositioned { c -> pets?.navTabs?.set(r, c.boundsInWindow()) }
+                                .press({ if (r != route) { haptics.select(); onChange(r) } }, Feel.None, 0.9f),
+                            contentAlignment = Alignment.Center,
+                        ) { NavIcon(icon, tint) }
+                    }
                 }
             }
+            // Back arrow, fading in as the pill becomes a square.
+            if (backAlpha > 0.01f) Icon(
+                Icons.AutoMirrored.Outlined.ArrowBack, null, tint = P.onHero,
+                modifier = Modifier.size(22.dp).graphicsLayer { alpha = backAlpha },
+            )
         }
     }
 }
@@ -6265,6 +6297,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.EventNote
 import androidx.compose.material.icons.outlined.Apps
@@ -6372,12 +6405,14 @@ fun TodayScreen(
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 // Tap your initials to open Settings / About — the circle morphs into that page's hero.
                 with(shared) {
+                    val morphShape = RoundedCornerShape(32.dp) // clamps to a circle at this size — matches at rest too, so there's no pop
                     Box(
                         Modifier
                             .sharedBounds(
                                 rememberSharedContentState("avatarMorph"), anim,
-                                clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(32.dp)),
+                                clipInOverlayDuringTransition = OverlayClip(morphShape),
                             )
+                            .clip(morphShape)
                             .press({ go(Route.More) }, Feel.Select, 0.88f),
                     ) { Avatar(name.ifEmpty { "A" }, P.sun, 52.dp) }
                 }
@@ -7533,6 +7568,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -7653,21 +7689,25 @@ fun MoreScreen(
     val latest = sems.lastOrNull()
     val st = s.settings
 
+    // The whole hero band is the shared element: it's what the avatar on Home grows into,
+    // so the shape must match the avatar's at one end and read as a normal hero at the other.
+    val heroShape = RoundedCornerShape(32.dp)
+    val heroMod = if (shared != null && anim != null) with(shared) {
+        Modifier.sharedBounds(
+            rememberSharedContentState("avatarMorph"), anim,
+            clipInOverlayDuringTransition = OverlayClip(heroShape),
+        )
+    } else Modifier
+    val screenH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
     HeroPage(
         heroColor = P.sun,
         refreshing = s.refreshing,
         onRefresh = onRefresh,
         banner = banner,
+        heroModifier = heroMod.clip(heroShape).heightIn(min = screenH * 0.46f),
         hero = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Morphs from the avatar you tapped on Home, when that's how you got here.
-                val avatarMod = if (shared != null && anim != null) with(shared) {
-                    Modifier.sharedBounds(
-                        rememberSharedContentState("avatarMorph"), anim,
-                        clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(32.dp)),
-                    )
-                } else Modifier
-                Box(avatarMod) { com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp) }
+                com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp)
                 Box(Modifier.weight(1f))
                 com.student.amizoneplus.ui.shell.MenuButton()
             }
@@ -7678,6 +7718,7 @@ fun MoreScreen(
                 StatTile(latest?.let { "%.2f".format(it.cgpa) } ?: "—", "CGPA", P.onHero.copy(alpha = 0.08f), onClick = { results = true })
                 StatTile(latest?.let { "%.2f".format(it.sgpa) } ?: "—", "SGPA", P.onHero.copy(alpha = 0.08f), onClick = { results = true })
             }
+            Box(Modifier.weight(1f, fill = false))
         },
     ) {
         Rise(1) {
@@ -8574,7 +8615,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
                 }
             }
             com.student.amizoneplus.ui.shell.StatusBlur(hazeState)
-            com.student.amizoneplus.ui.shell.BottomNav(route, ::go, hazeState)
+            com.student.amizoneplus.ui.shell.BottomNav(route, ::go, hazeState, onBack = { go(Route.Today) })
           }
             // Pets roam above the screens and the nav (so they can be carried onto a tab).
             com.student.amizoneplus.ui.pets.PetLayer(pets, s.settings.pets, active = !menuMounted && web == null && !gallery && s.celebrate == null)
