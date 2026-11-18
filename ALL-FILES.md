@@ -2326,53 +2326,6 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
 
 ---
 
-## `app/src/main/java/com/student/amizoneplus/work/KeepAliveWorker.kt`
-
-```kotlin
-package com.student.amizoneplus.work
-
-import android.content.Context
-import androidx.work.Constraints
-import androidx.work.CoroutineWorker
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.WorkerParameters
-import com.student.amizoneplus.data.Repository
-import java.util.concurrent.TimeUnit
-
-/**
- * Keeps the Amizone session warm. Amizone signs you out after a stretch of no activity,
- * and signing in again sometimes needs its human check. A tiny request every ~15 minutes
- * (Android may stretch this while the phone sleeps) keeps the session from going idle,
- * so opening the app hours later usually needs no sign-in at all.
- */
-class KeepAliveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result {
-        val repo = Repository.get(applicationContext)
-        if (repo.storage.loadCredentials() == null) return Result.success()
-        runCatching { repo.client.keepAlive() }
-        return Result.success()
-    }
-
-    companion object {
-        private const val NAME = "amizone-keepalive"
-
-        fun schedule(context: Context) {
-            val req = PeriodicWorkRequestBuilder<KeepAliveWorker>(15, TimeUnit.MINUTES)
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                .build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.KEEP, req)
-        }
-
-        fun cancel(context: Context) = WorkManager.getInstance(context).cancelUniqueWork(NAME)
-    }
-}
-```
-
----
-
 ## `app/src/main/java/com/student/amizoneplus/work/KeepAlive.kt`
 
 ```kotlin
@@ -4973,6 +4926,7 @@ import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -5060,6 +5014,30 @@ fun ErrorBanner(text: String, action: String, onClick: () -> Unit) {
     ) {
         Icon(Icons.Outlined.ErrorOutline, null, tint = P.bad)
         T("$text  $action", Type.caption, modifier = Modifier.weight(1f))
+    }
+}
+
+/**
+ * Shown when Amizone wants its CAPTCHA before signing in again. Says plainly that the
+ * app isn't broken, keeps your saved data on screen, and opens the real login page.
+ */
+@Composable
+fun HumanCheckBanner(onSignIn: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().press(onSignIn, Feel.Select, 0.97f).background(P.sun, RoundedCornerShape(28.dp)).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(34.dp).background(P.onHero, RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
+                Icon(androidx.compose.material.icons.Icons.Outlined.VerifiedUser, null, tint = P.sun, modifier = Modifier.size(19.dp))
+            }
+            T("NOTHING'S BROKEN", Type.title, color = P.onHero, modifier = Modifier.weight(1f))
+        }
+        T("Amizone just wants a quick human check before it lets the app back in. Tick the box once and you're set. Until then you're seeing your last saved data.",
+            Type.caption, color = P.onHero.copy(alpha = 0.8f))
+        Box(Modifier.padding(top = 6.dp).background(P.onHero, RoundedCornerShape(50)).padding(horizontal = 18.dp, vertical = 10.dp)) {
+            T("Do the check →", Type.label, color = P.sun)
+        }
     }
 }
 
@@ -5637,6 +5615,8 @@ data class UiState(
     val refreshing: Boolean = false,
     val error: String? = null,
     val needsWebLogin: Boolean = false,
+    /** Amizone wants its CAPTCHA before it will sign in again: the app itself is fine. */
+    val humanCheck: Boolean = false,
     val webLoginOpen: Boolean = false,
     val settings: Settings = Settings(),
     val username: String? = null,
@@ -5669,7 +5649,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             refresh()
             RefreshWorker.schedule(app)
             com.student.amizoneplus.work.KeepAlive.schedule(app)
-            com.student.amizoneplus.work.KeepAliveWorker.schedule(app)
+            // The old WorkManager keep-alive (≤2.1.4) is replaced by KeepAlive's alarms.
+            androidx.work.WorkManager.getInstance(app).cancelUniqueWork("amizone-keepalive")
         }
     }
 
@@ -5680,7 +5661,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val fresh = repo.refreshAll()
                 _state.update {
-                    it.copy(data = fresh, refreshing = false, needsWebLogin = false,
+                    it.copy(data = fresh, refreshing = false, needsWebLogin = false, humanCheck = false,
                         error = if (fresh.errors.isNotEmpty()) "Couldn't load: ${fresh.errors.joinToString()}" else null)
                 }
                 if (user) _feedback.send(if (fresh.errors.isEmpty()) Feedback.Success else Feedback.Warning)
@@ -5688,6 +5669,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: AmizoneException.Network) {
                 _state.update { it.copy(refreshing = false, error = e.message) }
                 if (user) _feedback.send(Feedback.Error)
+            } catch (e: AmizoneException.NeedsWebLogin) {
+                _state.update { it.copy(refreshing = false, error = e.message, needsWebLogin = true, humanCheck = true) }
+                if (user) _feedback.send(Feedback.Warning)
             } catch (e: AmizoneException) {
                 _state.update { it.copy(refreshing = false, error = e.message, needsWebLogin = true) }
                 if (user) _feedback.send(Feedback.Error)
@@ -5715,7 +5699,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(status = Status.SignedIn, username = c.username, error = null) }
         RefreshWorker.schedule(getApplication())
         com.student.amizoneplus.work.KeepAlive.schedule(getApplication())
-        com.student.amizoneplus.work.KeepAliveWorker.schedule(getApplication())
         refresh()
     }
 
@@ -5727,7 +5710,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun webLoginFinished() {
         com.student.amizoneplus.data.Http.persistSession()
         val c = pendingCreds
-        _state.update { it.copy(webLoginOpen = false, needsWebLogin = false, error = null) }
+        _state.update { it.copy(webLoginOpen = false, needsWebLogin = false, humanCheck = false, error = null) }
         if (_state.value.status != Status.SignedIn && c != null) enterApp(c) else refresh()
     }
 
@@ -5744,7 +5727,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun signOut() {
         RefreshWorker.cancel(getApplication())
         com.student.amizoneplus.work.KeepAlive.cancel(getApplication())
-        com.student.amizoneplus.work.KeepAliveWorker.cancel(getApplication())
         storage.clearAll()
         CookieManager.getInstance().removeAllCookies(null)
         _state.value = UiState(status = Status.SignedOut)
@@ -6024,7 +6006,7 @@ fun WebLoginSheet(username: String?, password: String?, onDone: () -> Unit, onCl
     BackHandler(onBack = onClose)
     Column(Modifier.fillMaxSize().background(P.canvas).statusBarsPadding().padding(top = L.page)) {
         SheetHeader("Sign in to Amizone", onClose)
-        T("Your details are filled in. Tick the Cloudflare box, tap Login, and this closes by itself.", Type.caption, sub = true, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
+        T("The app is fine: Amizone just asks every new sign-in to prove you're human. Your details are filled in. Tick the box, tap Login, and this closes by itself.", Type.caption, sub = true, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -6563,9 +6545,14 @@ fun TodayScreen(
                                 }
                             }
                             nextExam != null -> {
-                                T("EXAM: ${nextExam.name.uppercase()}", Type.headline.copy(fontSize = 27.sp()), maxLines = 2)
-                                T(listOfNotNull(nextExam.mode.ifBlank { null }, nextExam.timeMs?.let { com.student.amizoneplus.logic.examWhen(it, now) }).joinToString(" · "),
-                                    Type.body, sub = true, modifier = Modifier.padding(top = 8.dp))
+                                // Short name big (OOPs, DSA…), the full name small underneath, like the notification.
+                                val short = com.student.amizoneplus.logic.shortCourseName(nextExam.name)
+                                T("EXAM: ${short.uppercase().replace("OOPS", "OOPs")}", Type.headline.copy(fontSize = 27.sp()), maxLines = 1)
+                                if (!short.equals(nextExam.name, ignoreCase = true))
+                                    T(nextExam.name, Type.body, sub = true, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
+                                // When first: if the line is too long, it's "Regular" that gets cut, not the date.
+                                T(listOfNotNull(nextExam.timeMs?.let { com.student.amizoneplus.logic.examWhen(it, now) }, nextExam.mode.ifBlank { null }).joinToString(" · "),
+                                    Type.body, sub = true, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
                             }
                             low.isNotEmpty() -> {
                                 T("ATTENDANCE AT RISK", Type.headline.copy(fontSize = 27.sp()))
@@ -7807,9 +7794,11 @@ fun MoreScreen(
         onRefresh = onRefresh,
         banner = banner,
         hero = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Same spot and size as the avatar on Home (52dp, statusTop + 14dp), so the
+            // reveal grows out of — and shrinks back into — exactly the same square.
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 // Your initials take you back, just like the back button below.
-                Box(Modifier.press(onClose, Feel.Select, 0.88f)) { com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp) }
+                Box(Modifier.press(onClose, Feel.Select, 0.88f)) { com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 52.dp) }
                 Box(Modifier.weight(1f))
                 com.student.amizoneplus.ui.shell.MenuButton()
             }
@@ -8664,7 +8653,8 @@ private fun Main(vm: AppViewModel, s: UiState) {
     val openWeb: (String, String) -> Unit = { url, title -> web = url to title }
 
     val banner: (@Composable () -> Unit)? = s.error?.let { err ->
-        { ErrorBanner(err, if (s.needsWebLogin) "Sign in →" else "Retry") { if (s.needsWebLogin) vm.openWebLogin() else vm.refresh(true) } }
+        if (s.humanCheck) { { com.student.amizoneplus.ui.shell.HumanCheckBanner { vm.openWebLogin() } } }
+        else { { ErrorBanner(err, if (s.needsWebLogin) "Sign in →" else "Retry") { if (s.needsWebLogin) vm.openWebLogin() else vm.refresh(true) } } }
     }
 
     pets.switchTab = { r -> go(r) }
