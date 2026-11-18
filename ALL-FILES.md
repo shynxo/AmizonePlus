@@ -215,6 +215,8 @@ dependencies {
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- "Stay signed in": lets the app ask to run its session keep-alive in the background -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Lets exam reminders fire on time (8 pm the night before) when the phone allows it -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Lets the in-app updater hand a downloaded update to Android's installer -->
@@ -241,6 +243,16 @@ dependencies {
         </activity>
 
         <!-- Fires class / exam reminders scheduled with AlarmManager -->
+        <!-- Keeps the Amizone session alive; restarted after reboot / app update -->
+        <receiver
+            android:name=".work.KeepAliveReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".work.ReminderReceiver"
             android:exported="false" />
@@ -474,6 +486,9 @@ data class AmizoneData(
     val hours: Map<String, CourseHours> = emptyMap(), // course code -> weekly L / T / P from Programme Structure
     val fetchedAt: Long = 0,
     val errors: List<String> = emptyList(),
+    // Your Amity email password, as shown on the dashboard. Never written to the plain cache;
+    // the repository stores it encrypted (see Storage.saveSecret).
+    @kotlinx.serialization.Transient val emailPassword: String = "",
 )
 
 /** Weekly teaching hours from the Programme Structure: lectures, tutorials, practicals. */
@@ -815,6 +830,12 @@ object Parsers {
     fun homeEmail(html: String): String =
         Jsoup.parse(html).selectFirst("a.mail-id-text")?.ownText()?.trim().orEmpty()
 
+    /** The email password on Home: Password : <a id="dlPassword" onclick="pass('…', 'dlPassword')">. */
+    fun homeEmailPassword(html: String): String {
+        val a = Jsoup.parse(html).selectFirst("#dlPassword") ?: return ""
+        return Regex("""pass\(\s*'([^']*)'""").find(a.attr("onclick"))?.groupValues?.get(1).orEmpty()
+    }
+
     fun profile(html: String): Profile {
         val doc = Jsoup.parse(html)
         val front = doc.selectFirst("#lblNameIDCardFront1") ?: throw AmizoneException.Parse("ID card not found")
@@ -1090,6 +1111,7 @@ class AmizoneClient(private val credentials: () -> Credentials?) {
 
         val quiet = setOf("History", "Documents", "Credits")
         AmizoneData(
+            emailPassword = runCatching { Parsers.homeEmailPassword(home) }.getOrDefault(""),
             profile = profile.await()?.let { if (it.email.isEmpty()) it.copy(email = runCatching { Parsers.homeEmail(home) }.getOrDefault("")) else it },
             attendance = attendance,
             schedule = schedule.await(),
@@ -1629,6 +1651,26 @@ class Storage(context: Context) {
         }.getOrNull()
     }
 
+    /** Small secrets (e.g. the email password), encrypted with the same Keystore key. */
+    fun saveSecret(name: String, value: String) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
+        val enc = cipher.doFinal(value.toByteArray())
+        prefs.edit()
+            .putString("sec_${name}_iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+            .putString("sec_${name}_data", Base64.encodeToString(enc, Base64.NO_WRAP))
+            .apply()
+    }
+
+    fun loadSecret(name: String): String? {
+        val iv = prefs.getString("sec_${name}_iv", null) ?: return null
+        val data = prefs.getString("sec_${name}_data", null) ?: return null
+        return runCatching {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
+            String(cipher.doFinal(Base64.decode(data, Base64.NO_WRAP)))
+        }.getOrNull()
+    }
+
     /* ── JSON files ── */
 
     private fun file(name: String) = File(app.filesDir, name)
@@ -1706,6 +1748,7 @@ class Repository private constructor(context: Context) {
             credits = fresh.credits.ifEmpty { old?.credits.orEmpty() },
             hours = fresh.hours.ifEmpty { old?.hours.orEmpty() },
         )
+        if (fresh.emailPassword.isNotEmpty()) storage.saveSecret("email_pw", fresh.emailPassword)
         storage.saveCache(merged)
         Notifier.process(app, merged, storage.loadSettings(), storage)
         return merged
@@ -2324,6 +2367,80 @@ class KeepAliveWorker(context: Context, params: WorkerParameters) : CoroutineWor
         }
 
         fun cancel(context: Context) = WorkManager.getInstance(context).cancelUniqueWork(NAME)
+    }
+}
+```
+
+---
+
+## `app/src/main/java/com/student/amizoneplus/work/KeepAlive.kt`
+
+```kotlin
+package com.student.amizoneplus.work
+
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.util.Log
+import com.student.amizoneplus.data.Repository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * Keeps the Amizone session alive.
+ *
+ * Amizone now demands a CAPTCHA ("human check") for every new sign-in, so the app can't
+ * quietly sign in again once the session has lapsed. Instead it pings Amizone with a tiny
+ * signed-in request every ~10 minutes, which keeps the session from timing out.
+ *
+ * WorkManager is far too lazy for this (Android ran it 3 times in 13 hours); an
+ * allow-while-idle alarm fires even in Doze and briefly allows network access. Each ping
+ * schedules the next one, so the chain survives on its own; it is restarted on app start,
+ * after a reboot and after an update.
+ */
+object KeepAlive {
+    private const val INTERVAL_MS = 10 * 60_000L
+    private const val REQ = 7101
+
+    private fun pending(context: Context): PendingIntent =
+        PendingIntent.getBroadcast(
+            context, REQ, Intent(context, KeepAliveReceiver::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+    fun schedule(context: Context, delayMs: Long = INTERVAL_MS) {
+        val am = context.getSystemService(AlarmManager::class.java) ?: return
+        val at = System.currentTimeMillis() + delayMs
+        val pi = pending(context)
+        if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+        else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+    }
+
+    fun cancel(context: Context) {
+        context.getSystemService(AlarmManager::class.java)?.cancel(pending(context))
+    }
+}
+
+class KeepAliveReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val app = context.applicationContext
+        val repo = Repository.get(app)
+        if (repo.storage.loadCredentials() == null) return // signed out: let the chain end
+        val done = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val alive = withTimeoutOrNull(20_000) { runCatching { repo.client.keepAlive() }.getOrDefault(false) }
+                Log.i("AmzKeepAlive", "ping alive=$alive")
+            } finally {
+                KeepAlive.schedule(app)
+                done.finish()
+            }
+        }
     }
 }
 ```
@@ -5174,10 +5291,11 @@ fun BottomNav(
                 }
             }
             // Back arrow, fading in as the pill becomes a square.
-            if (backAlpha > 0.01f) Icon(
-                Icons.AutoMirrored.Outlined.ArrowBack, null, tint = P.onHero,
-                modifier = Modifier.size(22.dp).graphicsLayer { alpha = backAlpha },
-            )
+            if (backAlpha > 0.01f) Box(
+                Modifier.fillMaxSize().graphicsLayer { alpha = backAlpha; val s = 0.7f + 0.3f * backAlpha; scaleX = s; scaleY = s }
+                    .background(P.sky, RoundedCornerShape((L.nav - pad * 2) / 2)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = P.onHero, modifier = Modifier.size(22.dp)) }
         }
     }
 }
@@ -5550,6 +5668,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = UiState(status = Status.SignedIn, data = storage.loadCache(), settings = settings, username = creds.username)
             refresh()
             RefreshWorker.schedule(app)
+            com.student.amizoneplus.work.KeepAlive.schedule(app)
             com.student.amizoneplus.work.KeepAliveWorker.schedule(app)
         }
     }
@@ -5595,6 +5714,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         storage.saveCredentials(c)
         _state.update { it.copy(status = Status.SignedIn, username = c.username, error = null) }
         RefreshWorker.schedule(getApplication())
+        com.student.amizoneplus.work.KeepAlive.schedule(getApplication())
         com.student.amizoneplus.work.KeepAliveWorker.schedule(getApplication())
         refresh()
     }
@@ -5618,11 +5738,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun pendingCredentials() = pendingCreds
 
-    /** Your saved Amizone password, for the "reveal" row in About. Never leaves this phone. */
-    fun currentPassword(): String? = repo.storage.loadCredentials()?.password
+    /** Your Amity email password (from the dashboard), for the "reveal" row in About. */
+    fun emailPassword(): String? = repo.storage.loadSecret("email_pw")
 
     fun signOut() {
         RefreshWorker.cancel(getApplication())
+        com.student.amizoneplus.work.KeepAlive.cancel(getApplication())
         com.student.amizoneplus.work.KeepAliveWorker.cancel(getApplication())
         storage.clearAll()
         CookieManager.getInstance().removeAllCookies(null)
@@ -6273,9 +6394,6 @@ fun BadgeGallery(earned: List<Badge>, onClose: () -> Unit) {
 ```kotlin
 package com.student.amizoneplus.ui.screens
 
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import com.student.amizoneplus.ui.pets.perch
@@ -6297,7 +6415,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.EventNote
 import androidx.compose.material.icons.outlined.Apps
@@ -6316,6 +6433,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import com.student.amizoneplus.data.ScheduledClass
 import com.student.amizoneplus.logic.creditsFor
@@ -6370,11 +6489,11 @@ private fun dailySeries(history: List<ScheduledClass>): List<Pair<Long, Float>> 
         .map { (_, cs) -> cs.first().startMs to cs.count { it.state == "present" }.toFloat() / cs.size }
         .sortedBy { it.first }
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TodayScreen(
     s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges: () -> Unit, banner: (@Composable () -> Unit)?,
-    shared: SharedTransitionScope, anim: AnimatedVisibilityScope,
+    onAvatar: (androidx.compose.ui.geometry.Rect) -> Unit,
 ) {
     val menu = LocalMenu.current
     val data = s.data
@@ -6403,19 +6522,13 @@ fun TodayScreen(
         // Greeting row
         Rise(i++) {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                // Tap your initials to open Settings / About — the circle morphs into that page's hero.
-                with(shared) {
-                    val morphShape = RoundedCornerShape(32.dp) // clamps to a circle at this size — matches at rest too, so there's no pop
-                    Box(
-                        Modifier
-                            .sharedBounds(
-                                rememberSharedContentState("avatarMorph"), anim,
-                                clipInOverlayDuringTransition = OverlayClip(morphShape),
-                            )
-                            .clip(morphShape)
-                            .press({ go(Route.More) }, Feel.Select, 0.88f),
-                    ) { Avatar(name.ifEmpty { "A" }, P.sun, 52.dp) }
-                }
+                // Tap your initials: Settings / About grows out of this squircle.
+                var avatarBox by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+                Box(
+                    Modifier
+                        .onGloballyPositioned { avatarBox = it.boundsInWindow() }
+                        .press({ onAvatar(avatarBox) }, Feel.Select, 0.88f),
+                ) { Avatar(name.ifEmpty { "A" }, P.sun, 52.dp) }
                 T(if (first.isNotEmpty()) "Hi, $first!" else "Hi!", Type.label.copy(fontSize = 18.sp()), modifier = Modifier.weight(1f).padding(start = 14.dp), maxLines = 1)
                 CircleButton(Icons.Outlined.Apps, menu.open, 52.dp)
                 Spacer(Modifier.width(10.dp))
@@ -7604,6 +7717,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -7663,7 +7777,6 @@ private fun Choice(values: List<Int>, value: Int, fmt: (Int) -> String, onChange
     }
 }
 
-@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 fun MoreScreen(
     s: UiState,
@@ -7677,8 +7790,6 @@ fun MoreScreen(
     onFocusHandled: () -> Unit = {},
     checkUpdates: () -> Unit = {},
     getPassword: () -> String? = { null },
-    shared: androidx.compose.animation.SharedTransitionScope? = null,
-    anim: androidx.compose.animation.AnimatedVisibilityScope? = null,
 ) {
     val haptics = LocalHaptics.current
     var results by remember { mutableStateOf(focusResults) }
@@ -7689,22 +7800,11 @@ fun MoreScreen(
     val latest = sems.lastOrNull()
     val st = s.settings
 
-    // The whole hero band is the shared element: it's what the avatar on Home grows into,
-    // so the shape must match the avatar's at one end and read as a normal hero at the other.
-    val heroShape = RoundedCornerShape(32.dp)
-    val heroMod = if (shared != null && anim != null) with(shared) {
-        Modifier.sharedBounds(
-            rememberSharedContentState("avatarMorph"), anim,
-            clipInOverlayDuringTransition = OverlayClip(heroShape),
-        )
-    } else Modifier
-    val screenH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
     HeroPage(
         heroColor = P.sun,
         refreshing = s.refreshing,
         onRefresh = onRefresh,
         banner = banner,
-        heroModifier = heroMod.clip(heroShape).heightIn(min = screenH * 0.46f),
         hero = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp)
@@ -7718,7 +7818,6 @@ fun MoreScreen(
                 StatTile(latest?.let { "%.2f".format(it.cgpa) } ?: "—", "CGPA", P.onHero.copy(alpha = 0.08f), onClick = { results = true })
                 StatTile(latest?.let { "%.2f".format(it.sgpa) } ?: "—", "SGPA", P.onHero.copy(alpha = 0.08f), onClick = { results = true })
             }
-            Box(Modifier.weight(1f, fill = false))
         },
     ) {
         Rise(1) {
@@ -7732,6 +7831,7 @@ fun MoreScreen(
             Ink {
                 Caps("Feel", P.onInkFaint, Modifier.padding(bottom = 4.dp))
                 SettingRow(Icons.Outlined.Vibration, "Haptic feedback", right = { Toggle(st.haptics) { v -> updateSettings { it.copy(haptics = v) } } })
+                StaySignedInRow()
                 Caps("Notifications", P.onInkFaint, Modifier.padding(top = 20.dp, bottom = 4.dp))
                 SettingRow(Icons.Outlined.ErrorOutline, "Low attendance alerts", right = { Toggle(st.lowAttendanceAlerts) { v -> updateSettings { it.copy(lowAttendanceAlerts = v) } } })
                 SettingRow(Icons.Outlined.Alarm, "Class reminders", right = { Toggle(st.classReminders) { v -> updateSettings { it.copy(classReminders = v) } } })
@@ -7769,6 +7869,33 @@ fun MoreScreen(
     )
 
     if (results) ResultsSheet(s) { results = false }
+}
+
+/**
+ * Amizone now asks for a human check at every new sign-in, so the app keeps your
+ * session alive in the background instead. Phones (OnePlus especially) pause that to
+ * save battery unless the app is allowed to run in the background.
+ */
+@Composable
+private fun StaySignedInRow() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val pm = remember { ctx.getSystemService(android.os.PowerManager::class.java) }
+    var allowed by remember { mutableStateOf(pm.isIgnoringBatteryOptimizations(ctx.packageName)) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) { allowed = pm.isIgnoringBatteryOptimizations(ctx.packageName) }
+    }
+    SettingRow(
+        Icons.Outlined.Alarm, "Stay signed in",
+        onClick = if (allowed) null else ({
+            runCatching {
+                ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:" + ctx.packageName)))
+            }
+        }),
+        right = { T(if (allowed) "On" else "Allow", Type.caption, ink = true, sub = allowed, color = if (allowed) null else P.lav) },
+    )
+    if (!allowed) T("Lets the app keep your Amizone session alive in the background, so you don't get the human check again.",
+        Type.caption, ink = true, faint = true, modifier = Modifier.padding(start = 38.dp, bottom = 8.dp))
 }
 
 @Composable
@@ -7820,7 +7947,7 @@ private fun AboutCard(checkUpdates: () -> Unit, username: String?, email: String
                     modifier = Modifier.widthIn(max = 150.dp))
             })
             SettingRow(
-                Icons.Outlined.Key, "Password",
+                Icons.Outlined.Key, "Email password",
                 onClick = { haptics.select(); revealed = !revealed },
                 right = {
                     val pw = if (revealed) (getPassword() ?: "—") else "•".repeat((getPassword()?.length ?: 8).coerceIn(6, 14))
@@ -7834,7 +7961,7 @@ private fun AboutCard(checkUpdates: () -> Unit, username: String?, email: String
                 },
             )
         }
-        T("Only you can see this, on this phone. Nothing here ever leaves your device.",
+        T("Your Amity email login, from the Amizone dashboard. Stored encrypted on this phone only.",
             Type.caption, ink = true, faint = true, modifier = Modifier.padding(top = 8.dp))
         Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             T("Type: Barlow Condensed & DM Mono (SIL Open Font License)", Type.caption, ink = true, sub = true)
@@ -8457,7 +8584,6 @@ fun AppRoot(vm: AppViewModel) {
     }
 }
 
-@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 private fun Main(vm: AppViewModel, s: UiState) {
     val scope = rememberCoroutineScope()
@@ -8472,7 +8598,6 @@ private fun Main(vm: AppViewModel, s: UiState) {
     val hazeState = rememberHazeState()
     // The pets live across the whole app; this is their world.
     val pets = remember { com.student.amizoneplus.ui.pets.PetWorld() }
-    pets.route = route
 
     // Quick menu: one progress value (0 = closed, 1 = open) drives the whole choreography.
     var menuMounted by remember { mutableStateOf(false) }
@@ -8502,7 +8627,35 @@ private fun Main(vm: AppViewModel, s: UiState) {
     }
     BackHandler(enabled = menuOpen) { closeMenu() }
 
-    fun go(r: Route) { if (menuOpen) closeMenu(); route = r }
+    // Settings / About is an overlay, not a tab: it grows out of the avatar you tapped
+    // (a yellow squircle that expands to fill the screen, then the page fades in) and
+    // shrinks back into it. `aboutOpen` is where we're heading; `aboutShown` stays true
+    // until the closing animation has finished.
+    var aboutOpen by remember { mutableStateOf(false) }
+    var aboutShown by remember { mutableStateOf(false) }
+    var aboutOrigin by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val reveal = remember { Animatable(0f) }
+    fun openAbout(origin: androidx.compose.ui.geometry.Rect? = null) {
+        if (origin != null) aboutOrigin = origin
+        if (aboutOpen) return
+        aboutOpen = true; aboutShown = true; haptics.expand()
+        scope.launch { reveal.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 260f)) }
+    }
+    fun closeAbout() {
+        if (!aboutOpen) return
+        aboutOpen = false; haptics.collapse()
+        scope.launch {
+            reveal.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 330f))
+            if (!aboutOpen) aboutShown = false
+        }
+    }
+    pets.route = if (aboutShown) Route.More else route
+
+    fun go(r: Route) {
+        if (menuOpen) closeMenu()
+        if (r == Route.More) openAbout() else { closeAbout(); route = r }
+    }
+    BackHandler(enabled = aboutOpen && !menuOpen) { closeAbout() }
     val openWeb: (String, String) -> Unit = { url, title -> web = url to title }
 
     val banner: (@Composable () -> Unit)? = s.error?.let { err ->
@@ -8551,7 +8704,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
                 // sideways (day chips, the Timetable/Exams toggle, the nav) keep their own swipes.
                 val swipe = remember { Animatable(0f) }
                 val routeNow by androidx.compose.runtime.rememberUpdatedState(route)
-                val swipeEnabled = !menuMounted && web == null && !gallery
+                val swipeEnabled = !menuMounted && web == null && !gallery && !aboutShown
                 Box(Modifier.fillMaxSize()
                     .pointerInput(swipeEnabled) {
                         if (!swipeEnabled) return@pointerInput
@@ -8585,37 +8738,35 @@ private fun Main(vm: AppViewModel, s: UiState) {
                         scaleX = sc; scaleY = sc
                         translationX = swipe.value
                     }) {
-                    androidx.compose.animation.SharedTransitionLayout {
                     AnimatedContent(
                         route,
                         transitionSpec = {
-                            // Going to/from Settings-About morphs via the avatar (handled by sharedBounds);
-                            // between ordinary tabs it's the usual horizontal slide.
-                            if (initialState == Route.More || targetState == Route.More) {
-                                fadeIn(tween(220, easing = Motion.emphasized)) togetherWith fadeOut(tween(160))
-                            } else {
-                                val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
-                                (fadeIn(tween(240, easing = Motion.emphasized)) + slideInHorizontally(tween(420, easing = Motion.emphasized)) { dir * it / 7 }) togetherWith
-                                    (fadeOut(tween(160)) + slideOutHorizontally(tween(320, easing = Motion.emphasized)) { -dir * it / 10 })
-                            }
+                            // Slides the way the tabs are laid out: right-hand tabs come in from the right.
+                            val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                            (fadeIn(tween(240, easing = Motion.emphasized)) + slideInHorizontally(tween(420, easing = Motion.emphasized)) { dir * it / 7 }) togetherWith
+                                (fadeOut(tween(160)) + slideOutHorizontally(tween(320, easing = Motion.emphasized)) { -dir * it / 10 })
                         },
                         label = "route",
                     ) { r ->
                         CompositionLocalProvider(com.student.amizoneplus.ui.pets.LocalPetRoute provides r) {
                         when (r) {
-                            Route.Today -> TodayScreen(s, ::go, { vm.refresh(true) }, { gallery = true }, banner, this@SharedTransitionLayout, this)
+                            Route.Today -> TodayScreen(s, ::go, { vm.refresh(true) }, { gallery = true }, banner) { rect -> openAbout(rect) }
                             Route.Subjects -> SubjectsScreen(s, { vm.refresh(true) }, { code -> lmsFocus = code; go(Route.Lms) }, vm::updateSettings, banner)
                             Route.Lms -> LmsScreen(vm, s, lmsFocus, { lmsFocus = null }, openWeb)
                             Route.Schedule -> ScheduleScreen(s, { vm.refresh(true) }, banner, scheduleFocus) { scheduleFocus = null }
-                            Route.More -> MoreScreen(s, { vm.refresh(true) }, vm::updateSettings, { gallery = true }, openWeb, vm::signOut, banner, resultsFocus, { resultsFocus = false }, checkUpdates, vm::currentPassword, this@SharedTransitionLayout, this)
+                            Route.More -> Unit // shown as an overlay (below)
                         }
                         }
                     }
+                }
+                if (aboutShown) AboutReveal({ reveal.value }, aboutOrigin) {
+                    CompositionLocalProvider(com.student.amizoneplus.ui.pets.LocalPetRoute provides Route.More) {
+                        MoreScreen(s, { vm.refresh(true) }, vm::updateSettings, { gallery = true }, openWeb, vm::signOut, banner, resultsFocus, { resultsFocus = false }, checkUpdates, vm::emailPassword)
                     }
                 }
             }
             com.student.amizoneplus.ui.shell.StatusBlur(hazeState)
-            com.student.amizoneplus.ui.shell.BottomNav(route, ::go, hazeState, onBack = { go(Route.Today) })
+            com.student.amizoneplus.ui.shell.BottomNav(if (aboutOpen) Route.More else route, ::go, hazeState, onBack = { closeAbout() })
           }
             // Pets roam above the screens and the nav (so they can be carried onto a tab).
             com.student.amizoneplus.ui.pets.PetLayer(pets, s.settings.pets, active = !menuMounted && web == null && !gallery && s.celebrate == null)
@@ -8633,7 +8784,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
             // Status-bar icons: light over the dark home, dark over bright hero colours.
             val window = (androidx.compose.ui.platform.LocalContext.current as? android.app.Activity)?.window
             val view = androidx.compose.ui.platform.LocalView.current
-            val lightBars = if (route == Route.Today) !P.cur.dark else true
+            val lightBars = if (route == Route.Today && !aboutOpen) !P.cur.dark else true
             androidx.compose.runtime.SideEffect {
                 window?.let { androidx.core.view.WindowCompat.getInsetsController(it, view).isAppearanceLightStatusBars = lightBars }
             }
@@ -8651,6 +8802,35 @@ private fun Main(vm: AppViewModel, s: UiState) {
                 }
             }
         }
+    }
+}
+
+/**
+ * The Settings / About reveal: a clip that grows from the tapped avatar's squircle to the
+ * whole screen. While small it's solid hero-yellow; the page fades in as it lands, so it
+ * reads as the avatar itself expanding into the page. Closing plays it in reverse.
+ */
+@Composable
+private fun AboutReveal(progress: () -> Float, origin: androidx.compose.ui.geometry.Rect?, content: @Composable () -> Unit) {
+    fun mix(a: Float, b: Float, t: Float) = a + (b - a) * t
+    Box(
+        Modifier.fillMaxSize().graphicsLayer {
+            val p = progress()
+            val o = origin ?: androidx.compose.ui.geometry.Rect(size.width / 2 - 28.dp.toPx(), 90.dp.toPx(), size.width / 2 + 28.dp.toPx(), 146.dp.toPx())
+            val l = mix(o.left, 0f, p); val t = mix(o.top, 0f, p)
+            val r = mix(o.right, size.width, p); val b = mix(o.bottom, size.height, p)
+            val rad = mix(o.width * 0.32f, 0f, p.coerceIn(0f, 1f)) // Avatar's own squircle at the start
+            shape = object : androidx.compose.ui.graphics.Shape {
+                override fun createOutline(size: androidx.compose.ui.geometry.Size, layoutDirection: androidx.compose.ui.unit.LayoutDirection, density: androidx.compose.ui.unit.Density) =
+                    androidx.compose.ui.graphics.Outline.Rounded(androidx.compose.ui.geometry.RoundRect(l, t, r, b, androidx.compose.ui.geometry.CornerRadius(rad)))
+            }
+            clip = true
+        },
+    ) {
+        // The yellow squircle itself: always opaque, so nothing behind ever shows through.
+        Box(Modifier.fillMaxSize().background(P.sun))
+        // The page fades in on top of it only once it's (nearly) full size.
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = ((progress() - 0.62f) / 0.33f).coerceIn(0f, 1f) }) { content() }
     }
 }
 ```
@@ -8683,6 +8863,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         preferHighestRefreshRate()
         setContent { AppRoot(vm) }
+        com.student.amizoneplus.work.KeepAlive.schedule(this, 60_000L) // (re)start the session keep-alive
     }
 
     /**

@@ -169,6 +169,7 @@ class AmizoneClient(private val credentials: () -> Credentials?) {
 
         val quiet = setOf("History", "Documents", "Credits")
         AmizoneData(
+            emailPassword = runCatching { Parsers.homeEmailPassword(home) }.getOrDefault(""),
             profile = profile.await()?.let { if (it.email.isEmpty()) it.copy(email = runCatching { Parsers.homeEmail(home) }.getOrDefault("")) else it },
             attendance = attendance,
             schedule = schedule.await(),

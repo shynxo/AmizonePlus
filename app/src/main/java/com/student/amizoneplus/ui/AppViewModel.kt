@@ -60,6 +60,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = UiState(status = Status.SignedIn, data = storage.loadCache(), settings = settings, username = creds.username)
             refresh()
             RefreshWorker.schedule(app)
+            com.student.amizoneplus.work.KeepAlive.schedule(app)
             com.student.amizoneplus.work.KeepAliveWorker.schedule(app)
         }
     }
@@ -105,6 +106,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         storage.saveCredentials(c)
         _state.update { it.copy(status = Status.SignedIn, username = c.username, error = null) }
         RefreshWorker.schedule(getApplication())
+        com.student.amizoneplus.work.KeepAlive.schedule(getApplication())
         com.student.amizoneplus.work.KeepAliveWorker.schedule(getApplication())
         refresh()
     }
@@ -128,11 +130,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun pendingCredentials() = pendingCreds
 
-    /** Your saved Amizone password, for the "reveal" row in About. Never leaves this phone. */
-    fun currentPassword(): String? = repo.storage.loadCredentials()?.password
+    /** Your Amity email password (from the dashboard), for the "reveal" row in About. */
+    fun emailPassword(): String? = repo.storage.loadSecret("email_pw")
 
     fun signOut() {
         RefreshWorker.cancel(getApplication())
+        com.student.amizoneplus.work.KeepAlive.cancel(getApplication())
         com.student.amizoneplus.work.KeepAliveWorker.cancel(getApplication())
         storage.clearAll()
         CookieManager.getInstance().removeAllCookies(null)

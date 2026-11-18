@@ -29,6 +29,7 @@ class Repository private constructor(context: Context) {
             credits = fresh.credits.ifEmpty { old?.credits.orEmpty() },
             hours = fresh.hours.ifEmpty { old?.hours.orEmpty() },
         )
+        if (fresh.emailPassword.isNotEmpty()) storage.saveSecret("email_pw", fresh.emailPassword)
         storage.saveCache(merged)
         Notifier.process(app, merged, storage.loadSettings(), storage)
         return merged

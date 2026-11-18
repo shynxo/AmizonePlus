@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- "Stay signed in": lets the app ask to run its session keep-alive in the background -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Lets exam reminders fire on time (8 pm the night before) when the phone allows it -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Lets the in-app updater hand a downloaded update to Android's installer -->
@@ -31,6 +33,16 @@
         </activity>
 
         <!-- Fires class / exam reminders scheduled with AlarmManager -->
+        <!-- Keeps the Amizone session alive; restarted after reboot / app update -->
+        <receiver
+            android:name=".work.KeepAliveReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".work.ReminderReceiver"
             android:exported="false" />

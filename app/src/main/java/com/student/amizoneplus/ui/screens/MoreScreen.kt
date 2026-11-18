@@ -50,6 +50,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -109,7 +110,6 @@ private fun Choice(values: List<Int>, value: Int, fmt: (Int) -> String, onChange
     }
 }
 
-@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 fun MoreScreen(
     s: UiState,
@@ -123,8 +123,6 @@ fun MoreScreen(
     onFocusHandled: () -> Unit = {},
     checkUpdates: () -> Unit = {},
     getPassword: () -> String? = { null },
-    shared: androidx.compose.animation.SharedTransitionScope? = null,
-    anim: androidx.compose.animation.AnimatedVisibilityScope? = null,
 ) {
     val haptics = LocalHaptics.current
     var results by remember { mutableStateOf(focusResults) }
@@ -135,22 +133,11 @@ fun MoreScreen(
     val latest = sems.lastOrNull()
     val st = s.settings
 
-    // The whole hero band is the shared element: it's what the avatar on Home grows into,
-    // so the shape must match the avatar's at one end and read as a normal hero at the other.
-    val heroShape = RoundedCornerShape(32.dp)
-    val heroMod = if (shared != null && anim != null) with(shared) {
-        Modifier.sharedBounds(
-            rememberSharedContentState("avatarMorph"), anim,
-            clipInOverlayDuringTransition = OverlayClip(heroShape),
-        )
-    } else Modifier
-    val screenH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
     HeroPage(
         heroColor = P.sun,
         refreshing = s.refreshing,
         onRefresh = onRefresh,
         banner = banner,
-        heroModifier = heroMod.clip(heroShape).heightIn(min = screenH * 0.46f),
         hero = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp)
@@ -164,7 +151,6 @@ fun MoreScreen(
                 StatTile(latest?.let { "%.2f".format(it.cgpa) } ?: "—", "CGPA", P.onHero.copy(alpha = 0.08f), onClick = { results = true })
                 StatTile(latest?.let { "%.2f".format(it.sgpa) } ?: "—", "SGPA", P.onHero.copy(alpha = 0.08f), onClick = { results = true })
             }
-            Box(Modifier.weight(1f, fill = false))
         },
     ) {
         Rise(1) {
@@ -178,6 +164,7 @@ fun MoreScreen(
             Ink {
                 Caps("Feel", P.onInkFaint, Modifier.padding(bottom = 4.dp))
                 SettingRow(Icons.Outlined.Vibration, "Haptic feedback", right = { Toggle(st.haptics) { v -> updateSettings { it.copy(haptics = v) } } })
+                StaySignedInRow()
                 Caps("Notifications", P.onInkFaint, Modifier.padding(top = 20.dp, bottom = 4.dp))
                 SettingRow(Icons.Outlined.ErrorOutline, "Low attendance alerts", right = { Toggle(st.lowAttendanceAlerts) { v -> updateSettings { it.copy(lowAttendanceAlerts = v) } } })
                 SettingRow(Icons.Outlined.Alarm, "Class reminders", right = { Toggle(st.classReminders) { v -> updateSettings { it.copy(classReminders = v) } } })
@@ -215,6 +202,33 @@ fun MoreScreen(
     )
 
     if (results) ResultsSheet(s) { results = false }
+}
+
+/**
+ * Amizone now asks for a human check at every new sign-in, so the app keeps your
+ * session alive in the background instead. Phones (OnePlus especially) pause that to
+ * save battery unless the app is allowed to run in the background.
+ */
+@Composable
+private fun StaySignedInRow() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val pm = remember { ctx.getSystemService(android.os.PowerManager::class.java) }
+    var allowed by remember { mutableStateOf(pm.isIgnoringBatteryOptimizations(ctx.packageName)) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) { allowed = pm.isIgnoringBatteryOptimizations(ctx.packageName) }
+    }
+    SettingRow(
+        Icons.Outlined.Alarm, "Stay signed in",
+        onClick = if (allowed) null else ({
+            runCatching {
+                ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:" + ctx.packageName)))
+            }
+        }),
+        right = { T(if (allowed) "On" else "Allow", Type.caption, ink = true, sub = allowed, color = if (allowed) null else P.lav) },
+    )
+    if (!allowed) T("Lets the app keep your Amizone session alive in the background, so you don't get the human check again.",
+        Type.caption, ink = true, faint = true, modifier = Modifier.padding(start = 38.dp, bottom = 8.dp))
 }
 
 @Composable
@@ -266,7 +280,7 @@ private fun AboutCard(checkUpdates: () -> Unit, username: String?, email: String
                     modifier = Modifier.widthIn(max = 150.dp))
             })
             SettingRow(
-                Icons.Outlined.Key, "Password",
+                Icons.Outlined.Key, "Email password",
                 onClick = { haptics.select(); revealed = !revealed },
                 right = {
                     val pw = if (revealed) (getPassword() ?: "—") else "•".repeat((getPassword()?.length ?: 8).coerceIn(6, 14))
@@ -280,7 +294,7 @@ private fun AboutCard(checkUpdates: () -> Unit, username: String?, email: String
                 },
             )
         }
-        T("Only you can see this, on this phone. Nothing here ever leaves your device.",
+        T("Your Amity email login, from the Amizone dashboard. Stored encrypted on this phone only.",
             Type.caption, ink = true, faint = true, modifier = Modifier.padding(top = 8.dp))
         Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             T("Type: Barlow Condensed & DM Mono (SIL Open Font License)", Type.caption, ink = true, sub = true)

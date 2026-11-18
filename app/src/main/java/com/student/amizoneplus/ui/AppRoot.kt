@@ -95,7 +95,6 @@ fun AppRoot(vm: AppViewModel) {
     }
 }
 
-@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 private fun Main(vm: AppViewModel, s: UiState) {
     val scope = rememberCoroutineScope()
@@ -110,7 +109,6 @@ private fun Main(vm: AppViewModel, s: UiState) {
     val hazeState = rememberHazeState()
     // The pets live across the whole app; this is their world.
     val pets = remember { com.student.amizoneplus.ui.pets.PetWorld() }
-    pets.route = route
 
     // Quick menu: one progress value (0 = closed, 1 = open) drives the whole choreography.
     var menuMounted by remember { mutableStateOf(false) }
@@ -140,7 +138,35 @@ private fun Main(vm: AppViewModel, s: UiState) {
     }
     BackHandler(enabled = menuOpen) { closeMenu() }
 
-    fun go(r: Route) { if (menuOpen) closeMenu(); route = r }
+    // Settings / About is an overlay, not a tab: it grows out of the avatar you tapped
+    // (a yellow squircle that expands to fill the screen, then the page fades in) and
+    // shrinks back into it. `aboutOpen` is where we're heading; `aboutShown` stays true
+    // until the closing animation has finished.
+    var aboutOpen by remember { mutableStateOf(false) }
+    var aboutShown by remember { mutableStateOf(false) }
+    var aboutOrigin by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val reveal = remember { Animatable(0f) }
+    fun openAbout(origin: androidx.compose.ui.geometry.Rect? = null) {
+        if (origin != null) aboutOrigin = origin
+        if (aboutOpen) return
+        aboutOpen = true; aboutShown = true; haptics.expand()
+        scope.launch { reveal.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 260f)) }
+    }
+    fun closeAbout() {
+        if (!aboutOpen) return
+        aboutOpen = false; haptics.collapse()
+        scope.launch {
+            reveal.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 330f))
+            if (!aboutOpen) aboutShown = false
+        }
+    }
+    pets.route = if (aboutShown) Route.More else route
+
+    fun go(r: Route) {
+        if (menuOpen) closeMenu()
+        if (r == Route.More) openAbout() else { closeAbout(); route = r }
+    }
+    BackHandler(enabled = aboutOpen && !menuOpen) { closeAbout() }
     val openWeb: (String, String) -> Unit = { url, title -> web = url to title }
 
     val banner: (@Composable () -> Unit)? = s.error?.let { err ->
@@ -189,7 +215,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
                 // sideways (day chips, the Timetable/Exams toggle, the nav) keep their own swipes.
                 val swipe = remember { Animatable(0f) }
                 val routeNow by androidx.compose.runtime.rememberUpdatedState(route)
-                val swipeEnabled = !menuMounted && web == null && !gallery
+                val swipeEnabled = !menuMounted && web == null && !gallery && !aboutShown
                 Box(Modifier.fillMaxSize()
                     .pointerInput(swipeEnabled) {
                         if (!swipeEnabled) return@pointerInput
@@ -223,37 +249,35 @@ private fun Main(vm: AppViewModel, s: UiState) {
                         scaleX = sc; scaleY = sc
                         translationX = swipe.value
                     }) {
-                    androidx.compose.animation.SharedTransitionLayout {
                     AnimatedContent(
                         route,
                         transitionSpec = {
-                            // Going to/from Settings-About morphs via the avatar (handled by sharedBounds);
-                            // between ordinary tabs it's the usual horizontal slide.
-                            if (initialState == Route.More || targetState == Route.More) {
-                                fadeIn(tween(220, easing = Motion.emphasized)) togetherWith fadeOut(tween(160))
-                            } else {
-                                val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
-                                (fadeIn(tween(240, easing = Motion.emphasized)) + slideInHorizontally(tween(420, easing = Motion.emphasized)) { dir * it / 7 }) togetherWith
-                                    (fadeOut(tween(160)) + slideOutHorizontally(tween(320, easing = Motion.emphasized)) { -dir * it / 10 })
-                            }
+                            // Slides the way the tabs are laid out: right-hand tabs come in from the right.
+                            val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                            (fadeIn(tween(240, easing = Motion.emphasized)) + slideInHorizontally(tween(420, easing = Motion.emphasized)) { dir * it / 7 }) togetherWith
+                                (fadeOut(tween(160)) + slideOutHorizontally(tween(320, easing = Motion.emphasized)) { -dir * it / 10 })
                         },
                         label = "route",
                     ) { r ->
                         CompositionLocalProvider(com.student.amizoneplus.ui.pets.LocalPetRoute provides r) {
                         when (r) {
-                            Route.Today -> TodayScreen(s, ::go, { vm.refresh(true) }, { gallery = true }, banner, this@SharedTransitionLayout, this)
+                            Route.Today -> TodayScreen(s, ::go, { vm.refresh(true) }, { gallery = true }, banner) { rect -> openAbout(rect) }
                             Route.Subjects -> SubjectsScreen(s, { vm.refresh(true) }, { code -> lmsFocus = code; go(Route.Lms) }, vm::updateSettings, banner)
                             Route.Lms -> LmsScreen(vm, s, lmsFocus, { lmsFocus = null }, openWeb)
                             Route.Schedule -> ScheduleScreen(s, { vm.refresh(true) }, banner, scheduleFocus) { scheduleFocus = null }
-                            Route.More -> MoreScreen(s, { vm.refresh(true) }, vm::updateSettings, { gallery = true }, openWeb, vm::signOut, banner, resultsFocus, { resultsFocus = false }, checkUpdates, vm::currentPassword, this@SharedTransitionLayout, this)
+                            Route.More -> Unit // shown as an overlay (below)
                         }
                         }
                     }
+                }
+                if (aboutShown) AboutReveal({ reveal.value }, aboutOrigin) {
+                    CompositionLocalProvider(com.student.amizoneplus.ui.pets.LocalPetRoute provides Route.More) {
+                        MoreScreen(s, { vm.refresh(true) }, vm::updateSettings, { gallery = true }, openWeb, vm::signOut, banner, resultsFocus, { resultsFocus = false }, checkUpdates, vm::emailPassword)
                     }
                 }
             }
             com.student.amizoneplus.ui.shell.StatusBlur(hazeState)
-            com.student.amizoneplus.ui.shell.BottomNav(route, ::go, hazeState, onBack = { go(Route.Today) })
+            com.student.amizoneplus.ui.shell.BottomNav(if (aboutOpen) Route.More else route, ::go, hazeState, onBack = { closeAbout() })
           }
             // Pets roam above the screens and the nav (so they can be carried onto a tab).
             com.student.amizoneplus.ui.pets.PetLayer(pets, s.settings.pets, active = !menuMounted && web == null && !gallery && s.celebrate == null)
@@ -271,7 +295,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
             // Status-bar icons: light over the dark home, dark over bright hero colours.
             val window = (androidx.compose.ui.platform.LocalContext.current as? android.app.Activity)?.window
             val view = androidx.compose.ui.platform.LocalView.current
-            val lightBars = if (route == Route.Today) !P.cur.dark else true
+            val lightBars = if (route == Route.Today && !aboutOpen) !P.cur.dark else true
             androidx.compose.runtime.SideEffect {
                 window?.let { androidx.core.view.WindowCompat.getInsetsController(it, view).isAppearanceLightStatusBars = lightBars }
             }
@@ -289,5 +313,34 @@ private fun Main(vm: AppViewModel, s: UiState) {
                 }
             }
         }
+    }
+}
+
+/**
+ * The Settings / About reveal: a clip that grows from the tapped avatar's squircle to the
+ * whole screen. While small it's solid hero-yellow; the page fades in as it lands, so it
+ * reads as the avatar itself expanding into the page. Closing plays it in reverse.
+ */
+@Composable
+private fun AboutReveal(progress: () -> Float, origin: androidx.compose.ui.geometry.Rect?, content: @Composable () -> Unit) {
+    fun mix(a: Float, b: Float, t: Float) = a + (b - a) * t
+    Box(
+        Modifier.fillMaxSize().graphicsLayer {
+            val p = progress()
+            val o = origin ?: androidx.compose.ui.geometry.Rect(size.width / 2 - 28.dp.toPx(), 90.dp.toPx(), size.width / 2 + 28.dp.toPx(), 146.dp.toPx())
+            val l = mix(o.left, 0f, p); val t = mix(o.top, 0f, p)
+            val r = mix(o.right, size.width, p); val b = mix(o.bottom, size.height, p)
+            val rad = mix(o.width * 0.32f, 0f, p.coerceIn(0f, 1f)) // Avatar's own squircle at the start
+            shape = object : androidx.compose.ui.graphics.Shape {
+                override fun createOutline(size: androidx.compose.ui.geometry.Size, layoutDirection: androidx.compose.ui.unit.LayoutDirection, density: androidx.compose.ui.unit.Density) =
+                    androidx.compose.ui.graphics.Outline.Rounded(androidx.compose.ui.geometry.RoundRect(l, t, r, b, androidx.compose.ui.geometry.CornerRadius(rad)))
+            }
+            clip = true
+        },
+    ) {
+        // The yellow squircle itself: always opaque, so nothing behind ever shows through.
+        Box(Modifier.fillMaxSize().background(P.sun))
+        // The page fades in on top of it only once it's (nearly) full size.
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = ((progress() - 0.62f) / 0.33f).coerceIn(0f, 1f) }) { content() }
     }
 }

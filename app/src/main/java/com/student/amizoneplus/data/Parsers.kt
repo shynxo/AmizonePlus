@@ -191,6 +191,12 @@ object Parsers {
     fun homeEmail(html: String): String =
         Jsoup.parse(html).selectFirst("a.mail-id-text")?.ownText()?.trim().orEmpty()
 
+    /** The email password on Home: Password : <a id="dlPassword" onclick="pass('…', 'dlPassword')">. */
+    fun homeEmailPassword(html: String): String {
+        val a = Jsoup.parse(html).selectFirst("#dlPassword") ?: return ""
+        return Regex("""pass\(\s*'([^']*)'""").find(a.attr("onclick"))?.groupValues?.get(1).orEmpty()
+    }
+
     fun profile(html: String): Profile {
         val doc = Jsoup.parse(html)
         val front = doc.selectFirst("#lblNameIDCardFront1") ?: throw AmizoneException.Parse("ID card not found")

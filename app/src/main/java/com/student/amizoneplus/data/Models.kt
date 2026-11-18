@@ -74,6 +74,9 @@ data class AmizoneData(
     val hours: Map<String, CourseHours> = emptyMap(), // course code -> weekly L / T / P from Programme Structure
     val fetchedAt: Long = 0,
     val errors: List<String> = emptyList(),
+    // Your Amity email password, as shown on the dashboard. Never written to the plain cache;
+    // the repository stores it encrypted (see Storage.saveSecret).
+    @kotlinx.serialization.Transient val emailPassword: String = "",
 )
 
 /** Weekly teaching hours from the Programme Structure: lectures, tutorials, practicals. */

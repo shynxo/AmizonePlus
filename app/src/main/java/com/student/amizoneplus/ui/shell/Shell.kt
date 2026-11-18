@@ -356,10 +356,11 @@ fun BottomNav(
                 }
             }
             // Back arrow, fading in as the pill becomes a square.
-            if (backAlpha > 0.01f) Icon(
-                Icons.AutoMirrored.Outlined.ArrowBack, null, tint = P.onHero,
-                modifier = Modifier.size(22.dp).graphicsLayer { alpha = backAlpha },
-            )
+            if (backAlpha > 0.01f) Box(
+                Modifier.fillMaxSize().graphicsLayer { alpha = backAlpha; val s = 0.7f + 0.3f * backAlpha; scaleX = s; scaleY = s }
+                    .background(P.sky, RoundedCornerShape((L.nav - pad * 2) / 2)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = P.onHero, modifier = Modifier.size(22.dp)) }
         }
     }
 }

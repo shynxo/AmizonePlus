@@ -1,8 +1,5 @@
 package com.student.amizoneplus.ui.screens
 
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import com.student.amizoneplus.ui.pets.perch
@@ -24,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.EventNote
 import androidx.compose.material.icons.outlined.Apps
@@ -43,6 +39,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import com.student.amizoneplus.data.ScheduledClass
 import com.student.amizoneplus.logic.creditsFor
@@ -97,11 +95,11 @@ private fun dailySeries(history: List<ScheduledClass>): List<Pair<Long, Float>> 
         .map { (_, cs) -> cs.first().startMs to cs.count { it.state == "present" }.toFloat() / cs.size }
         .sortedBy { it.first }
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TodayScreen(
     s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges: () -> Unit, banner: (@Composable () -> Unit)?,
-    shared: SharedTransitionScope, anim: AnimatedVisibilityScope,
+    onAvatar: (androidx.compose.ui.geometry.Rect) -> Unit,
 ) {
     val menu = LocalMenu.current
     val data = s.data
@@ -130,19 +128,13 @@ fun TodayScreen(
         // Greeting row
         Rise(i++) {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                // Tap your initials to open Settings / About — the circle morphs into that page's hero.
-                with(shared) {
-                    val morphShape = RoundedCornerShape(32.dp) // clamps to a circle at this size — matches at rest too, so there's no pop
-                    Box(
-                        Modifier
-                            .sharedBounds(
-                                rememberSharedContentState("avatarMorph"), anim,
-                                clipInOverlayDuringTransition = OverlayClip(morphShape),
-                            )
-                            .clip(morphShape)
-                            .press({ go(Route.More) }, Feel.Select, 0.88f),
-                    ) { Avatar(name.ifEmpty { "A" }, P.sun, 52.dp) }
-                }
+                // Tap your initials: Settings / About grows out of this squircle.
+                var avatarBox by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+                Box(
+                    Modifier
+                        .onGloballyPositioned { avatarBox = it.boundsInWindow() }
+                        .press({ onAvatar(avatarBox) }, Feel.Select, 0.88f),
+                ) { Avatar(name.ifEmpty { "A" }, P.sun, 52.dp) }
                 T(if (first.isNotEmpty()) "Hi, $first!" else "Hi!", Type.label.copy(fontSize = 18.sp()), modifier = Modifier.weight(1f).padding(start = 14.dp), maxLines = 1)
                 CircleButton(Icons.Outlined.Apps, menu.open, 52.dp)
                 Spacer(Modifier.width(10.dp))

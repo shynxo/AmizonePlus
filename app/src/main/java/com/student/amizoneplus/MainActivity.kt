@@ -21,6 +21,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         preferHighestRefreshRate()
         setContent { AppRoot(vm) }
+        com.student.amizoneplus.work.KeepAlive.schedule(this, 60_000L) // (re)start the session keep-alive
     }
 
     /**

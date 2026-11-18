@@ -61,6 +61,26 @@ class Storage(context: Context) {
         }.getOrNull()
     }
 
+    /** Small secrets (e.g. the email password), encrypted with the same Keystore key. */
+    fun saveSecret(name: String, value: String) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
+        val enc = cipher.doFinal(value.toByteArray())
+        prefs.edit()
+            .putString("sec_${name}_iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+            .putString("sec_${name}_data", Base64.encodeToString(enc, Base64.NO_WRAP))
+            .apply()
+    }
+
+    fun loadSecret(name: String): String? {
+        val iv = prefs.getString("sec_${name}_iv", null) ?: return null
+        val data = prefs.getString("sec_${name}_data", null) ?: return null
+        return runCatching {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
+            String(cipher.doFinal(Base64.decode(data, Base64.NO_WRAP)))
+        }.getOrNull()
+    }
+
     /* ── JSON files ── */
 
     private fun file(name: String) = File(app.filesDir, name)
