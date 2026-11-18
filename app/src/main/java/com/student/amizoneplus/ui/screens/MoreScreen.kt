@@ -140,9 +140,11 @@ fun MoreScreen(
         onRefresh = onRefresh,
         banner = banner,
         hero = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Same spot and size as the avatar on Home (52dp, statusTop + 14dp), so the
+            // reveal grows out of — and shrinks back into — exactly the same square.
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 // Your initials take you back, just like the back button below.
-                Box(Modifier.press(onClose, Feel.Select, 0.88f)) { com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp) }
+                Box(Modifier.press(onClose, Feel.Select, 0.88f)) { com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 52.dp) }
                 Box(Modifier.weight(1f))
                 com.student.amizoneplus.ui.shell.MenuButton()
             }
