@@ -29,6 +29,8 @@ data class UiState(
     val refreshing: Boolean = false,
     val error: String? = null,
     val needsWebLogin: Boolean = false,
+    /** Amizone wants its CAPTCHA before it will sign in again: the app itself is fine. */
+    val humanCheck: Boolean = false,
     val webLoginOpen: Boolean = false,
     val settings: Settings = Settings(),
     val username: String? = null,
@@ -61,7 +63,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             refresh()
             RefreshWorker.schedule(app)
             com.student.amizoneplus.work.KeepAlive.schedule(app)
-            com.student.amizoneplus.work.KeepAliveWorker.schedule(app)
+            // The old WorkManager keep-alive (≤2.1.4) is replaced by KeepAlive's alarms.
+            androidx.work.WorkManager.getInstance(app).cancelUniqueWork("amizone-keepalive")
         }
     }
 
@@ -72,7 +75,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val fresh = repo.refreshAll()
                 _state.update {
-                    it.copy(data = fresh, refreshing = false, needsWebLogin = false,
+                    it.copy(data = fresh, refreshing = false, needsWebLogin = false, humanCheck = false,
                         error = if (fresh.errors.isNotEmpty()) "Couldn't load: ${fresh.errors.joinToString()}" else null)
                 }
                 if (user) _feedback.send(if (fresh.errors.isEmpty()) Feedback.Success else Feedback.Warning)
@@ -80,6 +83,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: AmizoneException.Network) {
                 _state.update { it.copy(refreshing = false, error = e.message) }
                 if (user) _feedback.send(Feedback.Error)
+            } catch (e: AmizoneException.NeedsWebLogin) {
+                _state.update { it.copy(refreshing = false, error = e.message, needsWebLogin = true, humanCheck = true) }
+                if (user) _feedback.send(Feedback.Warning)
             } catch (e: AmizoneException) {
                 _state.update { it.copy(refreshing = false, error = e.message, needsWebLogin = true) }
                 if (user) _feedback.send(Feedback.Error)
@@ -107,7 +113,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(status = Status.SignedIn, username = c.username, error = null) }
         RefreshWorker.schedule(getApplication())
         com.student.amizoneplus.work.KeepAlive.schedule(getApplication())
-        com.student.amizoneplus.work.KeepAliveWorker.schedule(getApplication())
         refresh()
     }
 
@@ -119,7 +124,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun webLoginFinished() {
         com.student.amizoneplus.data.Http.persistSession()
         val c = pendingCreds
-        _state.update { it.copy(webLoginOpen = false, needsWebLogin = false, error = null) }
+        _state.update { it.copy(webLoginOpen = false, needsWebLogin = false, humanCheck = false, error = null) }
         if (_state.value.status != Status.SignedIn && c != null) enterApp(c) else refresh()
     }
 
@@ -136,7 +141,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun signOut() {
         RefreshWorker.cancel(getApplication())
         com.student.amizoneplus.work.KeepAlive.cancel(getApplication())
-        com.student.amizoneplus.work.KeepAliveWorker.cancel(getApplication())
         storage.clearAll()
         CookieManager.getInstance().removeAllCookies(null)
         _state.value = UiState(status = Status.SignedOut)

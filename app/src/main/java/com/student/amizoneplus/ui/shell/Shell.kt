@@ -38,6 +38,7 @@ import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -125,6 +126,30 @@ fun ErrorBanner(text: String, action: String, onClick: () -> Unit) {
     ) {
         Icon(Icons.Outlined.ErrorOutline, null, tint = P.bad)
         T("$text  $action", Type.caption, modifier = Modifier.weight(1f))
+    }
+}
+
+/**
+ * Shown when Amizone wants its CAPTCHA before signing in again. Says plainly that the
+ * app isn't broken, keeps your saved data on screen, and opens the real login page.
+ */
+@Composable
+fun HumanCheckBanner(onSignIn: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().press(onSignIn, Feel.Select, 0.97f).background(P.sun, RoundedCornerShape(28.dp)).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(34.dp).background(P.onHero, RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
+                Icon(androidx.compose.material.icons.Icons.Outlined.VerifiedUser, null, tint = P.sun, modifier = Modifier.size(19.dp))
+            }
+            T("NOTHING'S BROKEN", Type.title, color = P.onHero, modifier = Modifier.weight(1f))
+        }
+        T("Amizone just wants a quick human check before it lets the app back in. Tick the box once and you're set. Until then you're seeing your last saved data.",
+            Type.caption, color = P.onHero.copy(alpha = 0.8f))
+        Box(Modifier.padding(top = 6.dp).background(P.onHero, RoundedCornerShape(50)).padding(horizontal = 18.dp, vertical = 10.dp)) {
+            T("Do the check →", Type.label, color = P.sun)
+        }
     }
 }
 

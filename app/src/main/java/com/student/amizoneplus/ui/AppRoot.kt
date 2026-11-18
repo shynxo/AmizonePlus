@@ -173,7 +173,8 @@ private fun Main(vm: AppViewModel, s: UiState) {
     val openWeb: (String, String) -> Unit = { url, title -> web = url to title }
 
     val banner: (@Composable () -> Unit)? = s.error?.let { err ->
-        { ErrorBanner(err, if (s.needsWebLogin) "Sign in →" else "Retry") { if (s.needsWebLogin) vm.openWebLogin() else vm.refresh(true) } }
+        if (s.humanCheck) { { com.student.amizoneplus.ui.shell.HumanCheckBanner { vm.openWebLogin() } } }
+        else { { ErrorBanner(err, if (s.needsWebLogin) "Sign in →" else "Retry") { if (s.needsWebLogin) vm.openWebLogin() else vm.refresh(true) } } }
     }
 
     pets.switchTab = { r -> go(r) }

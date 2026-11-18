@@ -169,9 +169,14 @@ fun TodayScreen(
                                 }
                             }
                             nextExam != null -> {
-                                T("EXAM: ${nextExam.name.uppercase()}", Type.headline.copy(fontSize = 27.sp()), maxLines = 2)
-                                T(listOfNotNull(nextExam.mode.ifBlank { null }, nextExam.timeMs?.let { com.student.amizoneplus.logic.examWhen(it, now) }).joinToString(" · "),
-                                    Type.body, sub = true, modifier = Modifier.padding(top = 8.dp))
+                                // Short name big (OOPs, DSA…), the full name small underneath, like the notification.
+                                val short = com.student.amizoneplus.logic.shortCourseName(nextExam.name)
+                                T("EXAM: ${short.uppercase().replace("OOPS", "OOPs")}", Type.headline.copy(fontSize = 27.sp()), maxLines = 1)
+                                if (!short.equals(nextExam.name, ignoreCase = true))
+                                    T(nextExam.name, Type.body, sub = true, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
+                                // When first: if the line is too long, it's "Regular" that gets cut, not the date.
+                                T(listOfNotNull(nextExam.timeMs?.let { com.student.amizoneplus.logic.examWhen(it, now) }, nextExam.mode.ifBlank { null }).joinToString(" · "),
+                                    Type.body, sub = true, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
                             }
                             low.isNotEmpty() -> {
                                 T("ATTENDANCE AT RISK", Type.headline.copy(fontSize = 27.sp()))

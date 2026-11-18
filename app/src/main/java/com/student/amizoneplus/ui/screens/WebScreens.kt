@@ -243,7 +243,7 @@ fun WebLoginSheet(username: String?, password: String?, onDone: () -> Unit, onCl
     BackHandler(onBack = onClose)
     Column(Modifier.fillMaxSize().background(P.canvas).statusBarsPadding().padding(top = L.page)) {
         SheetHeader("Sign in to Amizone", onClose)
-        T("Your details are filled in. Tick the Cloudflare box, tap Login, and this closes by itself.", Type.caption, sub = true, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
+        T("The app is fine: Amizone just asks every new sign-in to prove you're human. Your details are filled in. Tick the box, tap Login, and this closes by itself.", Type.caption, sub = true, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->

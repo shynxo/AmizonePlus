@@ -93,7 +93,7 @@ compileSdk/targetSdk 37 · minSdk 26 (Android 8+). Gradle JDK = Android Studio's
 | `Notifier.kt` | Notification channels, low-attendance alerts, class & exam reminders (AlarmManager) |
 | `ReminderReceiver.kt` | Shows a reminder when its alarm fires |
 | `RefreshWorker.kt` | WorkManager job refreshing data about every 6 hours |
-| `KeepAliveWorker.kt` | Tiny signed-in request every ~15 min so the Amizone session doesn't expire from inactivity (never signs in itself) |
+| `KeepAlive.kt` (also) | The old 15-min WorkManager keep-alive was removed in 2.1.5; its leftover job is cancelled on launch |
 | `KeepAlive.kt` | Session keep-alive on allow-while-idle alarms every ~10 min (Amizone now needs a CAPTCHA for every new sign-in, so the session must not lapse) |
 | `NotifArt.kt` | Draws reminder notifications as app-styled cards with a pixel pet (sleeping the night before an exam) |
 | `AmizoneApp.kt` *(root)* | Creates notification channels at app start |
