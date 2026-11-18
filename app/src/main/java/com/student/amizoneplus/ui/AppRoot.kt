@@ -29,6 +29,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
@@ -150,13 +153,13 @@ private fun Main(vm: AppViewModel, s: UiState) {
         if (origin != null) aboutOrigin = origin
         if (aboutOpen) return
         aboutOpen = true; aboutShown = true; haptics.expand()
-        scope.launch { reveal.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 260f)) }
+        scope.launch { reveal.animateTo(1f, tween(600, easing = androidx.compose.animation.core.CubicBezierEasing(0.45f, 0f, 0.2f, 1f))) } // even growth, soft landing (like Telegram)
     }
     fun closeAbout() {
         if (!aboutOpen) return
         aboutOpen = false; haptics.collapse()
         scope.launch {
-            reveal.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 330f))
+            reveal.animateTo(0f, tween(480, easing = androidx.compose.animation.core.CubicBezierEasing(0.3f, 0f, 0.2f, 1f)))
             if (!aboutOpen) aboutShown = false
         }
     }
@@ -272,7 +275,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
                 }
                 if (aboutShown) AboutReveal({ reveal.value }, aboutOrigin) {
                     CompositionLocalProvider(com.student.amizoneplus.ui.pets.LocalPetRoute provides Route.More) {
-                        MoreScreen(s, { vm.refresh(true) }, vm::updateSettings, { gallery = true }, openWeb, vm::signOut, banner, resultsFocus, { resultsFocus = false }, checkUpdates, vm::emailPassword)
+                        MoreScreen(s, { vm.refresh(true) }, vm::updateSettings, { gallery = true }, openWeb, vm::signOut, banner, resultsFocus, { resultsFocus = false }, checkUpdates, vm::emailPassword, onClose = { closeAbout() })
                     }
                 }
             }
@@ -317,30 +320,31 @@ private fun Main(vm: AppViewModel, s: UiState) {
 }
 
 /**
- * The Settings / About reveal: a clip that grows from the tapped avatar's squircle to the
- * whole screen. While small it's solid hero-yellow; the page fades in as it lands, so it
- * reads as the avatar itself expanding into the page. Closing plays it in reverse.
+ * The Settings / About reveal, after Telegram's theme switch: the page appears inside a
+ * circle that grows out of the avatar you tapped, its rim a wide soft feather rather than
+ * a hard edge, until it covers the screen. Closing shrinks it back into the avatar.
  */
 @Composable
 private fun AboutReveal(progress: () -> Float, origin: androidx.compose.ui.geometry.Rect?, content: @Composable () -> Unit) {
-    fun mix(a: Float, b: Float, t: Float) = a + (b - a) * t
     Box(
-        Modifier.fillMaxSize().graphicsLayer {
-            val p = progress()
-            val o = origin ?: androidx.compose.ui.geometry.Rect(size.width / 2 - 28.dp.toPx(), 90.dp.toPx(), size.width / 2 + 28.dp.toPx(), 146.dp.toPx())
-            val l = mix(o.left, 0f, p); val t = mix(o.top, 0f, p)
-            val r = mix(o.right, size.width, p); val b = mix(o.bottom, size.height, p)
-            val rad = mix(o.width * 0.32f, 0f, p.coerceIn(0f, 1f)) // Avatar's own squircle at the start
-            shape = object : androidx.compose.ui.graphics.Shape {
-                override fun createOutline(size: androidx.compose.ui.geometry.Size, layoutDirection: androidx.compose.ui.unit.LayoutDirection, density: androidx.compose.ui.unit.Density) =
-                    androidx.compose.ui.graphics.Outline.Rounded(androidx.compose.ui.geometry.RoundRect(l, t, r, b, androidx.compose.ui.geometry.CornerRadius(rad)))
-            }
-            clip = true
-        },
-    ) {
-        // The yellow squircle itself: always opaque, so nothing behind ever shows through.
-        Box(Modifier.fillMaxSize().background(P.sun))
-        // The page fades in on top of it only once it's (nearly) full size.
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = ((progress() - 0.62f) / 0.33f).coerceIn(0f, 1f) }) { content() }
-    }
+        Modifier.fillMaxSize()
+            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+            .drawWithContent {
+                val c = origin?.center ?: androidx.compose.ui.geometry.Offset(size.width - 48.dp.toPx(), 140.dp.toPx())
+                val feather = 140.dp.toPx()
+                // Far enough to clear the furthest corner, rim included.
+                val far = listOf(Offset(0f, 0f), Offset(size.width, 0f), Offset(0f, size.height), Offset(size.width, size.height))
+                    .maxOf { (it - c).getDistance() } + feather
+                val r = (far * progress()).coerceAtLeast(0.01f)
+                val inner = ((r - feather) / r).coerceIn(0f, 1f)
+                drawContent()
+                drawRect(
+                    androidx.compose.ui.graphics.Brush.radialGradient(
+                        0f to Color.Black, inner to Color.Black, 1f to Color.Transparent,
+                        center = c, radius = r,
+                    ),
+                    blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
+                )
+            },
+    ) { content() }
 }

@@ -123,6 +123,7 @@ fun MoreScreen(
     onFocusHandled: () -> Unit = {},
     checkUpdates: () -> Unit = {},
     getPassword: () -> String? = { null },
+    onClose: (() -> Unit)? = null,
 ) {
     val haptics = LocalHaptics.current
     var results by remember { mutableStateOf(focusResults) }
@@ -140,7 +141,8 @@ fun MoreScreen(
         banner = banner,
         hero = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp)
+                // Your initials take you back, just like the back button below.
+                Box(Modifier.press(onClose, Feel.Select, 0.88f)) { com.student.amizoneplus.ui.kit.Avatar(p?.name ?: s.username ?: "?", P.cream, 56.dp) }
                 Box(Modifier.weight(1f))
                 com.student.amizoneplus.ui.shell.MenuButton()
             }
