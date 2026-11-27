@@ -1,5 +1,8 @@
 package com.student.amizoneplus.ui.screens
 
+import kotlinx.coroutines.launch
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.outlined.UnfoldLess
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
@@ -151,6 +154,7 @@ private fun SubjectList(
         refreshing = s.refreshing,
         onRefresh = onRefresh,
         banner = banner,
+        fitSheet = true,
         hero = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // The title shrinks a touch rather than wrapping when the filter label is long.
@@ -287,6 +291,17 @@ private fun AttendanceTile(
         grow.animateTo(1f, tween(700, easing = Motion.emphasized))
     }
     val sel by androidx.compose.animation.core.animateFloatAsState(if (selected) 1f else 0f, tween(220), label = "sel")
+    // Hold the bar, then drag: it thickens (taking the note's row) and follows your finger.
+    // Let go and it springs back to the truth, with a cheeky toast.
+    val ctx = LocalContext.current
+    val haptics = LocalHaptics.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var holding by remember { mutableStateOf(false) }
+    val shownPct = remember { Animatable(pct) }
+    LaunchedEffect(pct) { if (!holding) shownPct.snapTo(pct) }
+    val hold by androidx.compose.animation.core.animateFloatAsState(
+        if (holding) 1f else 0f, androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 520f), label = "hold",
+    )
     // Cards on the dark sheet; below-target subjects turn coral so they stand out.
     val ink = if (low) P.onHero else P.text
     val bg = if (low) P.coral else lerp(P.card, P.cardRaised, sel)
@@ -310,22 +325,60 @@ private fun AttendanceTile(
         }
         Row(Modifier.padding(top = 4.dp).sharedBar(c.code, shared, anim), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.weight(1f).height(8.dp).drawBehind {
-                    val h = size.height
-                    drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, h)), ink.copy(alpha = 0.16f))
-                    val w = size.width * (pct / 100f) * grow.value
-                    if (w > 0f) drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(0f, 0f, w.coerceAtLeast(h), h)), fill)
-                    val tx = size.width * threshold / 100f
-                    drawLine(ink.copy(alpha = 0.5f), Offset(tx, -3.dp.toPx()), Offset(tx, h + 3.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
-                },
+                Modifier.weight(1f).height(8.dp + 17.dp * hold)
+                    .pointerInput(none) {
+                        if (none) return@pointerInput
+                        var lastStep = -1
+                        fun setFrom(x: Float) {
+                            val v = (x / size.width * 100f).coerceIn(0f, 100f)
+                            val step = (v / 5f).toInt()
+                            if (step != lastStep) { lastStep = step; haptics.tick() }
+                            scope.launch { shownPct.snapTo(v) }
+                        }
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { o -> holding = true; haptics.armed(); lastStep = -1; setFrom(o.x) },
+                            onDrag = { ch, _ -> ch.consume(); setFrom(ch.position.x) },
+                            onDragEnd = {
+                                holding = false
+                                scope.launch { shownPct.animateTo(pct, androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 260f)) }
+                                android.widget.Toast.makeText(ctx, WISHES.random(), android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            onDragCancel = {
+                                holding = false
+                                scope.launch { shownPct.animateTo(pct, androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 260f)) }
+                            },
+                        )
+                    }
+                    .drawBehind {
+                        val h = size.height
+                        drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, h)), ink.copy(alpha = 0.16f))
+                        val w = size.width * (shownPct.value / 100f) * grow.value
+                        if (w > 0f) drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(0f, 0f, w.coerceAtLeast(h), h)), fill)
+                        val tx = size.width * threshold / 100f
+                        drawLine(ink.copy(alpha = 0.5f), Offset(tx, -3.dp.toPx()), Offset(tx, h + 3.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
+                    },
             )
-            Text(if (none) "—" else "${(pct * grow.value).roundToInt()}%",
+            Text(if (none) "—" else "${(shownPct.value * grow.value).roundToInt()}%",
                 style = Type.numSm.copy(fontSize = androidx.compose.ui.unit.TextUnit(22f, androidx.compose.ui.unit.TextUnitType.Sp)),
                 color = ink, maxLines = 1, modifier = Modifier.padding(start = 10.dp))
         }
-        T(note, Type.caption, color = ink.copy(alpha = 0.72f), maxLines = 1)
+        // The note gives its row to the thickened bar while you're playing with it.
+        T(note, Type.caption, color = ink.copy(alpha = 0.72f), maxLines = 1, modifier = Modifier
+            .layout { m, cons ->
+                val pl = m.measure(cons)
+                layout(pl.width, (pl.height * (1f - hold)).roundToInt().coerceAtLeast(0)) { pl.place(0, 0) }
+            }
+            .graphicsLayer { alpha = (1f - hold * 1.5f).coerceIn(0f, 1f) })
     }
 }
+
+/** What the toast says when you let go of a bar you've been "fixing". */
+private val WISHES = listOf(
+    "Wish it was this easy, mate 😉",
+    "Nice try. Amizone didn't see that.",
+    "If only attendance worked like this…",
+    "Dragging it won't mark you present 😄",
+)
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -386,7 +439,7 @@ private fun ExpandedSubject(
     val screenH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
     Column(
         with(shared) {
-            Modifier.fillMaxWidth().heightIn(min = screenH * 0.62f)
+            Modifier.fillMaxWidth()
                 .sharedBounds(rememberSharedContentState("card-${c.code}"), anim, boundsTransform = MorphBounds,
                     clipInOverlayDuringTransition = OverlayClip(SquircleShape(28.dp)))
         }

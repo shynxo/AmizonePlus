@@ -242,6 +242,8 @@ fun HeroPage(
     heroModifier: Modifier = Modifier, // lets a caller clip/share-bind the hero band itself
     /** False: no dark sheet below; the colour fills the whole page and the hero is the page. */
     sheet: Boolean = true,
+    /** True: the sheet is only tall enough to reach the bottom of the screen, so a short list doesn't leave a long empty scroll. */
+    fitSheet: Boolean = false,
     hero: @Composable ColumnScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -298,7 +300,7 @@ fun HeroPage(
                         }
                         .pointerInput(Unit) {} // the sheet owns touches over it (none leak to the hero beneath)
                         .fillMaxWidth()
-                        .heightIn(min = screenH)
+                        .heightIn(min = if (fitSheet && heroH > 0) (screenH - with(d) { heroH.toDp() } + overlap).coerceAtLeast(0.dp) else screenH)
                         .background(P.sheet, SquircleShape(topStart = L.sheetRadius * (1 - 0.4f * k), topEnd = L.sheetRadius * (1 - 0.4f * k)))
                         .padding(start = L.page, end = L.page, top = 18.dp, bottom = navClearance),
                     verticalArrangement = Arrangement.spacedBy(L.block),
