@@ -1,6 +1,9 @@
 package com.student.amizoneplus.ui.theme
 
-import android.view.HapticFeedbackConstants
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.VibrationEffect.Composition
+import android.os.Vibrator
 import android.view.View
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.spring
@@ -177,83 +180,132 @@ fun attendanceTone(pct: Double, threshold: Int, onInk: Boolean = true): Color = 
 }
 
 /**
- * Haptic vocabulary: each interaction has its own feel. All no-ops when the user
- * switches haptics off in More.
+ * Haptic vocabulary: each interaction has its own feel, played the best way THIS phone's
+ * vibration motor can. Android's built-in "haptic feedback constants" assume a crisp
+ * linear motor (LRA, as in Pixels / OnePlus) and are silently ignored on many phones:
+ * cheaper ones with a spinning-weight motor (ERM), older Android versions, or phones with
+ * system touch vibration turned off. So the app detects what the motor can do (see
+ * [Motor]) and drives it directly. All no-ops when the user switches haptics off.
  */
 class Haptics(private val view: View, private val enabled: () -> Boolean) {
-    private fun h(c: Int) {
-        if (enabled()) view.performHapticFeedback(c)
+    /** What the vibration hardware can do, best first. */
+    enum class Motor(val label: String) {
+        Rich("Linear motor, full effects"),       // Android 12+ with haptic primitives (good LRA)
+        Tuned("Linear motor, preset effects"),    // phone ships tuned click / tick effects
+        Amplitude("Variable-strength motor"),     // can vary strength, no presets
+        Basic("Basic motor"),                     // on/off only (usually an ERM): longer pulses
+        None("No vibration motor"),
     }
+    private enum class Fx { Tick, Click, Heavy, Double, Rise, Fall }
 
-    fun select() = h(HapticFeedbackConstants.CLOCK_TICK)
-    fun tap() = h(HapticFeedbackConstants.KEYBOARD_TAP)
-    fun press() = h(HapticFeedbackConstants.VIRTUAL_KEY)
-    fun expand() = h(HapticFeedbackConstants.CONTEXT_CLICK)
-    fun collapse() = h(HapticFeedbackConstants.KEYBOARD_TAP)
-    fun tick() = h(HapticFeedbackConstants.CLOCK_TICK)
-    fun pull() = h(HapticFeedbackConstants.GESTURE_START)
-    fun success() = h(HapticFeedbackConstants.CONFIRM)
-    fun warning() = h(HapticFeedbackConstants.REJECT)
-    fun error() = h(HapticFeedbackConstants.REJECT)
-
-    /* ── Pull-to-refresh tension (LRA primitives; simple ticks on older phones) ── */
-
-    private val vibrator: android.os.Vibrator? by lazy {
+    private val vibrator: Vibrator? by lazy {
         val ctx = view.context
-        if (android.os.Build.VERSION.SDK_INT >= 31) ctx.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
-        else @Suppress("DEPRECATION") ctx.getSystemService(android.os.Vibrator::class.java)
-    }
-    private val rich: Boolean by lazy {
-        android.os.Build.VERSION.SDK_INT >= 31 && vibrator?.areAllPrimitivesSupported(
-            android.os.VibrationEffect.Composition.PRIMITIVE_LOW_TICK,
-            android.os.VibrationEffect.Composition.PRIMITIVE_CLICK,
-            android.os.VibrationEffect.Composition.PRIMITIVE_THUD,
-            android.os.VibrationEffect.Composition.PRIMITIVE_QUICK_RISE,
-            android.os.VibrationEffect.Composition.PRIMITIVE_QUICK_FALL,
-        ) == true
+        if (Build.VERSION.SDK_INT >= 31) ctx.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+        else @Suppress("DEPRECATION") ctx.getSystemService(Vibrator::class.java)
     }
 
-    private fun compose(vararg parts: Pair<Int, Float>) {
+    val motor: Motor by lazy {
+        val v = vibrator
+        when {
+            v == null || !v.hasVibrator() -> Motor.None
+            Build.VERSION.SDK_INT >= 31 && v.areAllPrimitivesSupported(
+                Composition.PRIMITIVE_TICK, Composition.PRIMITIVE_LOW_TICK, Composition.PRIMITIVE_CLICK,
+                Composition.PRIMITIVE_THUD, Composition.PRIMITIVE_QUICK_RISE, Composition.PRIMITIVE_QUICK_FALL,
+            ) -> Motor.Rich
+            Build.VERSION.SDK_INT >= 30 && v.areAllEffectsSupported(
+                VibrationEffect.EFFECT_TICK, VibrationEffect.EFFECT_CLICK,
+                VibrationEffect.EFFECT_HEAVY_CLICK, VibrationEffect.EFFECT_DOUBLE_CLICK,
+            ) == Vibrator.VIBRATION_EFFECT_SUPPORT_YES -> Motor.Tuned
+            v.hasAmplitudeControl() -> Motor.Amplitude
+            else -> Motor.Basic
+        }
+    }
+
+    private fun play(e: VibrationEffect) { runCatching { vibrator?.vibrate(e) } }
+
+    /** [strength] 0..1 scales the effect where the motor allows it. */
+    private fun fx(f: Fx, strength: Float = 1f) {
         if (!enabled()) return
-        if (android.os.Build.VERSION.SDK_INT < 31 || !rich) return
-        val c = android.os.VibrationEffect.startComposition()
-        parts.forEach { (p, s) -> c.addPrimitive(p, s.coerceIn(0.05f, 1f)) }
-        runCatching { vibrator?.vibrate(c.compose()) }
+        val k = strength.coerceIn(0.05f, 1f)
+        when (motor) {
+            Motor.None -> {}
+            Motor.Rich -> if (Build.VERSION.SDK_INT >= 31) {
+                val c = VibrationEffect.startComposition()
+                when (f) {
+                    Fx.Tick -> c.addPrimitive(Composition.PRIMITIVE_TICK, 0.7f * k)
+                    Fx.Click -> c.addPrimitive(Composition.PRIMITIVE_CLICK, 0.8f * k)
+                    Fx.Heavy -> c.addPrimitive(Composition.PRIMITIVE_CLICK, k).addPrimitive(Composition.PRIMITIVE_THUD, 0.7f * k)
+                    Fx.Double -> c.addPrimitive(Composition.PRIMITIVE_CLICK, 0.8f * k).addPrimitive(Composition.PRIMITIVE_CLICK, 0.8f * k, 70)
+                    Fx.Rise -> c.addPrimitive(Composition.PRIMITIVE_QUICK_RISE, 0.8f * k)
+                    Fx.Fall -> c.addPrimitive(Composition.PRIMITIVE_QUICK_FALL, 0.5f * k)
+                }
+                play(c.compose())
+            }
+            Motor.Tuned -> if (Build.VERSION.SDK_INT >= 29) play(VibrationEffect.createPredefined(when (f) {
+                Fx.Tick, Fx.Fall -> VibrationEffect.EFFECT_TICK
+                Fx.Click, Fx.Rise -> VibrationEffect.EFFECT_CLICK
+                Fx.Heavy -> VibrationEffect.EFFECT_HEAVY_CLICK
+                Fx.Double -> VibrationEffect.EFFECT_DOUBLE_CLICK
+            }))
+            // Short pulses with strength control.
+            Motor.Amplitude -> {
+                fun a(x: Float) = (x * k * 255).toInt().coerceIn(1, 255)
+                play(when (f) {
+                    Fx.Tick -> VibrationEffect.createOneShot(8, a(0.45f))
+                    Fx.Click -> VibrationEffect.createOneShot(14, a(0.75f))
+                    Fx.Heavy -> VibrationEffect.createOneShot(26, a(1f))
+                    Fx.Double -> VibrationEffect.createWaveform(longArrayOf(0, 14, 70, 14), intArrayOf(0, a(0.8f), 0, a(0.8f)), -1)
+                    Fx.Rise -> VibrationEffect.createWaveform(longArrayOf(0, 10, 10, 14), intArrayOf(0, a(0.35f), a(0.65f), a(1f)), -1)
+                    Fx.Fall -> VibrationEffect.createWaveform(longArrayOf(0, 10, 10), intArrayOf(0, a(0.5f), a(0.25f)), -1)
+                })
+            }
+            // On/off motors need ~20 ms just to spin up, so very short pulses are never felt.
+            Motor.Basic -> play(when (f) {
+                Fx.Tick, Fx.Fall -> VibrationEffect.createOneShot(18, VibrationEffect.DEFAULT_AMPLITUDE)
+                Fx.Click, Fx.Rise -> VibrationEffect.createOneShot(28, VibrationEffect.DEFAULT_AMPLITUDE)
+                Fx.Heavy -> VibrationEffect.createOneShot(45, VibrationEffect.DEFAULT_AMPLITUDE)
+                Fx.Double -> VibrationEffect.createWaveform(longArrayOf(0, 28, 90, 28), -1)
+            })
+        }
     }
 
+    fun select() = fx(Fx.Tick)
+    fun tap() = fx(Fx.Click, 0.7f)
+    fun press() = fx(Fx.Click)
+    fun expand() = fx(Fx.Click, 0.85f)
+    fun collapse() = fx(Fx.Tick, 0.9f)
+    fun tick() = fx(Fx.Tick, 0.8f)
+    fun pull() = fx(Fx.Tick)
+    fun success() = fx(Fx.Double)
+    fun warning() = fx(Fx.Heavy, 0.7f)
+    fun error() = fx(Fx.Heavy)
+
+    /* Pull-to-refresh */
+
+    private var lastTension = 0L
     /** One tension tick; [level] 0..1 grows as the pull nears the threshold. */
     fun tension(level: Float) {
-        if (rich && android.os.Build.VERSION.SDK_INT >= 31) compose(android.os.VibrationEffect.Composition.PRIMITIVE_LOW_TICK to 0.12f + 0.88f * level * level)
-        else h(HapticFeedbackConstants.CLOCK_TICK)
+        // A basic motor can't do featherweight ticks: space them out so it doesn't just buzz.
+        if (motor == Motor.Basic) {
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastTension < 120) return
+            lastTension = now
+        }
+        fx(Fx.Tick, 0.15f + 0.85f * level * level)
     }
-
     /** Pulled far enough: a firm thunk. */
-    fun armed() {
-        if (rich && android.os.Build.VERSION.SDK_INT >= 31) compose(
-            android.os.VibrationEffect.Composition.PRIMITIVE_CLICK to 1f,
-            android.os.VibrationEffect.Composition.PRIMITIVE_THUD to 0.7f,
-        ) else h(HapticFeedbackConstants.LONG_PRESS)
-    }
-
+    fun armed() = fx(Fx.Heavy)
     /** Backed off below the threshold again. */
-    fun disarm() {
-        if (rich && android.os.Build.VERSION.SDK_INT >= 31) compose(android.os.VibrationEffect.Composition.PRIMITIVE_QUICK_FALL to 0.5f)
-        else h(HapticFeedbackConstants.CLOCK_TICK)
-    }
-
+    fun disarm() = fx(Fx.Fall)
     /** Let go to refresh: a quick swell. */
-    fun launch() {
-        if (rich && android.os.Build.VERSION.SDK_INT >= 31) compose(android.os.VibrationEffect.Composition.PRIMITIVE_QUICK_RISE to 0.8f)
-        else h(HapticFeedbackConstants.GESTURE_END)
-    }
+    fun launch() = fx(Fx.Rise)
 
     fun celebrate() {
         if (!enabled()) return
         CoroutineScope(Dispatchers.Main).launch {
-            for ((wait, c) in listOf(0L to HapticFeedbackConstants.LONG_PRESS, 90L to HapticFeedbackConstants.VIRTUAL_KEY,
-                80L to HapticFeedbackConstants.KEYBOARD_TAP, 150L to HapticFeedbackConstants.CONFIRM)) {
+            for ((wait, f) in listOf(0L to Fx.Heavy, 110L to Fx.Click, 90L to Fx.Tick, 160L to Fx.Double)) {
                 delay(wait)
-                view.performHapticFeedback(c)
+                fx(f)
             }
         }
     }

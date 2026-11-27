@@ -243,6 +243,24 @@ fun WebLoginSheet(username: String?, password: String?, onDone: () -> Unit, onCl
     BackHandler(onBack = onClose)
     Column(Modifier.fillMaxSize().background(P.canvas).statusBarsPadding().padding(top = L.page)) {
         SheetHeader("Sign in to Amizone", onClose)
+        // Amizone's human check (Cloudflare) needs a reasonably recent web engine. Older
+        // phones (Android 8 / 9) often still have the WebView they shipped with: offer the update.
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val wv = remember { runCatching { WebView.getCurrentWebViewPackage() }.getOrNull() }
+        val major = wv?.versionName?.substringBefore('.')?.toIntOrNull() ?: 0
+        if (major in 1..99) {
+            Box(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp).fillMaxWidth()
+                .background(P.sun, androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+                .press({
+                    val pkg = wv?.packageName ?: "com.google.android.webview"
+                    runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("market://details?id=$pkg"))) }
+                        .onFailure { runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://play.google.com/store/apps/details?id=$pkg"))) } }
+                })
+                .padding(16.dp)) {
+                T("This phone's web engine is old (version $major), so Amizone's check box may not work. Tap to update \"Android System WebView\" in the Play Store, then try again.",
+                    Type.caption, color = P.onHero)
+            }
+        }
         T("The app is fine: Amizone just asks every new sign-in to prove you're human. Your details are filled in. Tick the box, tap Login, and this closes by itself.", Type.caption, sub = true, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
         AndroidView(
             modifier = Modifier.fillMaxSize(),

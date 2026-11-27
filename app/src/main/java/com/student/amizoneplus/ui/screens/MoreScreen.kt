@@ -168,6 +168,9 @@ fun MoreScreen(
             Ink {
                 Caps("Feel", P.onInkFaint, Modifier.padding(bottom = 4.dp))
                 SettingRow(Icons.Outlined.Vibration, "Haptic feedback", right = { Toggle(st.haptics) { v -> updateSettings { it.copy(haptics = v) } } })
+                // Which motor the app found, and so how it vibrates (tuned per phone).
+                T("Tuned for this phone: " + haptics.motor.label.replaceFirstChar { it.lowercase() } + ".", Type.caption, color = P.onInkFaint,
+                    modifier = Modifier.padding(start = 40.dp, bottom = 6.dp))
                 StaySignedInRow()
                 Caps("Notifications", P.onInkFaint, Modifier.padding(top = 20.dp, bottom = 4.dp))
                 SettingRow(Icons.Outlined.ErrorOutline, "Low attendance alerts", right = { Toggle(st.lowAttendanceAlerts) { v -> updateSettings { it.copy(lowAttendanceAlerts = v) } } })

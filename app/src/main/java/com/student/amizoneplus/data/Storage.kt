@@ -27,6 +27,7 @@ class Storage(context: Context) {
     /* ── Credentials ── */
 
     private val keyAlias = "amizone_credentials_key"
+    private val PLAIN = "plain"
 
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -41,44 +42,54 @@ class Storage(context: Context) {
         return gen.generateKey()
     }
 
+    /**
+     * Encrypts with the phone's Keystore. Some older phones (often Android 8 / 9) have a
+     * buggy Keystore that throws; then the key is recreated once, and if it still fails the
+     * value is kept unencrypted in the app's private storage (marked "plain"), so signing
+     * in still works on those phones.
+     */
+    private fun seal(plain: ByteArray): Pair<String, String> {
+        repeat(2) { attempt ->
+            runCatching {
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
+                val enc = cipher.doFinal(plain)
+                return Base64.encodeToString(cipher.iv, Base64.NO_WRAP) to Base64.encodeToString(enc, Base64.NO_WRAP)
+            }.onFailure {
+                if (attempt == 0) runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(keyAlias) }
+            }
+        }
+        return PLAIN to Base64.encodeToString(plain, Base64.NO_WRAP)
+    }
+
+    private fun open(iv: String, data: String): ByteArray? = runCatching {
+        if (iv == PLAIN) return@runCatching Base64.decode(data, Base64.NO_WRAP)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
+        cipher.doFinal(Base64.decode(data, Base64.NO_WRAP))
+    }.getOrNull()
+
     fun saveCredentials(c: Credentials) {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val enc = cipher.doFinal("${c.username}\u0000${c.password}".toByteArray())
-        prefs.edit()
-            .putString("cred_iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-            .putString("cred_data", Base64.encodeToString(enc, Base64.NO_WRAP))
-            .apply()
+        val (iv, data) = seal("${c.username}\u0000${c.password}".toByteArray())
+        prefs.edit().putString("cred_iv", iv).putString("cred_data", data).apply()
     }
 
     fun loadCredentials(): Credentials? {
         val iv = prefs.getString("cred_iv", null) ?: return null
         val data = prefs.getString("cred_data", null) ?: return null
-        return runCatching {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
-            val (u, p) = String(cipher.doFinal(Base64.decode(data, Base64.NO_WRAP))).split('\u0000', limit = 2)
-            Credentials(u, p)
-        }.getOrNull()
+        val (u, p) = open(iv, data)?.let { String(it).split('\u0000', limit = 2) }?.takeIf { it.size == 2 } ?: return null
+        return Credentials(u, p)
     }
 
     /** Small secrets (e.g. the email password), encrypted with the same Keystore key. */
     fun saveSecret(name: String, value: String) {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val enc = cipher.doFinal(value.toByteArray())
-        prefs.edit()
-            .putString("sec_${name}_iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-            .putString("sec_${name}_data", Base64.encodeToString(enc, Base64.NO_WRAP))
-            .apply()
+        val (iv, data) = seal(value.toByteArray())
+        prefs.edit().putString("sec_${name}_iv", iv).putString("sec_${name}_data", data).apply()
     }
 
     fun loadSecret(name: String): String? {
         val iv = prefs.getString("sec_${name}_iv", null) ?: return null
         val data = prefs.getString("sec_${name}_data", null) ?: return null
-        return runCatching {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
-            String(cipher.doFinal(Base64.decode(data, Base64.NO_WRAP)))
-        }.getOrNull()
+        return open(iv, data)?.let { String(it) }
     }
 
     /* ── JSON files ── */
