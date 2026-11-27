@@ -16,8 +16,8 @@ android {
         minSdk = 26
         targetSdk = 37
         // Bump BOTH for every release: versionCode +1, versionName to the new tag (v2.1.0 → "2.1.0").
-        versionCode = 3
-        versionName = "2.1.5"
+        versionCode = 4
+        versionName = "2.1.6"
 
         // Where the in-app updater looks for new versions: "<github-username>/<repo>".
         buildConfigField("String", "UPDATE_REPO", "\"shynxo/AmizonePlus\"")
