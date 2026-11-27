@@ -1,5 +1,12 @@
 package com.student.amizoneplus.ui.screens
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
+import kotlin.math.roundToInt
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.graphicsLayer
@@ -167,7 +174,7 @@ private fun SubjectList(
                 MenuButton()
             }
             // Data where the reference has mascots: every subject's attendance, with the target line.
-            SubjectBars(held, t, Modifier.fillMaxWidth().height(170.dp).padding(top = 20.dp))
+            SubjectBars(held, t, Modifier.fillMaxWidth().padding(top = 20.dp))
             Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatTile("${courses.size}", "subjects", P.coralSoft)
                 StatTile("$atRisk", "below $t%", P.coralSoft, onClick = { filter = "at risk" })
@@ -237,64 +244,58 @@ private fun FilterMenu(value: String, onPick: (String) -> Unit) {
 }
 
 /**
- * One bar per subject, scaled 50–100% so differences are visible, with a dashed
- * target line and each subject's code underneath. Bars grow in smoothly.
+ * Attendance at a glance: two columns of fat, rounded pills, one per subject. Each pill
+ * fills from the left with that subject's attendance, has its short name inside (OOPs, DSA…)
+ * and its percentage at the end, and a small notch marks your target. Pills fill in one
+ * after another with a soft bounce. Subjects under the target fill dark, with light text.
  */
 @Composable
 private fun SubjectBars(courses: List<Course>, threshold: Int, modifier: Modifier) {
-    Column(modifier) {
-        BarsCanvas(courses, threshold, Modifier.fillMaxWidth().weight(1f))
-        // Short names (OOPs, DSA, Maths…), tilted −45° and laid back as if lying on the floor
-        // in front of the bars: each one ends right under its bar and runs down-left.
-        Row(Modifier.fillMaxWidth().height(58.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            courses.forEach { c ->
-                Box(Modifier.weight(1f).fillMaxHeight()) {
-                    androidx.compose.material3.Text(
-                        com.student.amizoneplus.logic.shortCourseName(c.name, 12).replace("OOPS", "OOPs"),
-                        style = Type.caption.copy(fontSize = androidx.compose.ui.unit.TextUnit(11f, androidx.compose.ui.unit.TextUnitType.Sp),
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
-                        color = P.onHero.copy(alpha = 0.75f), maxLines = 1, softWrap = false,
-                        modifier = Modifier
-                            .layout { m, cons ->
-                                // Measure at natural width; place so the text's END sits at the slot's centre.
-                                val pl = m.measure(cons.copy(minWidth = 0, maxWidth = androidx.compose.ui.unit.Constraints.Infinity))
-                                layout(cons.maxWidth, pl.height) { pl.place(cons.maxWidth / 2 - pl.width, 6.dp.roundToPx()) }
-                            }
-                            .graphicsLayer {
-                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 0f)
-                                cameraDistance = 6f * density
-                                rotationX = 38f      // lean back onto the "floor"
-                                rotationZ = -45f
-                            },
-                    )
-                }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        courses.chunked(2).forEachIndexed { row, pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                pair.forEachIndexed { col, c -> AttendancePill(c, threshold, row * 2 + col, Modifier.weight(1f)) }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
 }
 
-private const val BAR_FLOOR = 50f
-private fun barFrac(p: Float) = ((p - BAR_FLOOR) / (100f - BAR_FLOOR)).coerceIn(0.04f, 1f)
-
 @Composable
-private fun BarsCanvas(courses: List<Course>, threshold: Int, modifier: Modifier) {
+private fun AttendancePill(c: Course, threshold: Int, index: Int, modifier: Modifier) {
+    val pct = percent(c.attended, c.held).toFloat()
+    val low = pct < threshold
     val grow = remember { Animatable(0f) }
-    LaunchedEffect(courses.size) { grow.snapTo(0f); grow.animateTo(1f, tween(900, easing = Motion.emphasized)) }
-    Canvas(modifier) {
-        if (courses.isEmpty()) return@Canvas
-        val n = courses.size
-        val gap = 10.dp.toPx()
-        val bw = (size.width - gap * (n - 1)) / n
-        courses.forEachIndexed { i, c ->
-            val p = percent(c.attended, c.held).toFloat() / 100f
-            val h = size.height * barFrac(p * 100) * grow.value
-            val x = i * (bw + gap)
-            drawRoundRect(P.onHero.copy(alpha = 0.10f), Offset(x, 0f), androidx.compose.ui.geometry.Size(bw, size.height), androidx.compose.ui.geometry.CornerRadius(bw / 2))
-            drawRoundRect(if (p * 100 < threshold) P.onHero else Color.White, Offset(x, size.height - h), androidx.compose.ui.geometry.Size(bw, h),
-                androidx.compose.ui.geometry.CornerRadius(bw / 2))
+    LaunchedEffect(c.code, pct) {
+        grow.snapTo(0f)
+        kotlinx.coroutines.delay(60L * index)
+        grow.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.62f, stiffness = 160f))
+    }
+    val fillColor = if (low) P.onHero else Color.White
+    val name = com.student.amizoneplus.logic.shortCourseName(c.name, 12).replace("OOPS", "OOPs")
+    val label: @Composable (Color) -> Unit = { col ->
+        Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            T(name, Type.label, color = col, maxLines = 1, modifier = Modifier.weight(1f))
+            T("${pct.roundToInt()}%", Type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = col.copy(alpha = 0.8f), maxLines = 1)
         }
-        val ty = size.height * (1 - barFrac(threshold.toFloat()))
-        drawLine(P.onHero, Offset(0f, ty), Offset(size.width, ty), 1.5.dp.toPx(), StrokeCap.Round, PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 6.dp.toPx())))
+    }
+    Box(
+        modifier.height(48.dp).clip(SquircleShape(50))
+            .background(P.onHero.copy(alpha = 0.10f))
+            .drawBehind {
+                val w = size.width * (pct / 100f) * grow.value
+                // Fill: a pill of its own, so the right end stays round as it grows.
+                if (w > 0f) drawRoundRect(fillColor, size = Size(w.coerceAtLeast(size.height), size.height), cornerRadius = CornerRadius(size.height / 2))
+                // Target: a small notch on the pill's bottom edge, clear of the text.
+                val tx = size.width * threshold / 100f
+                drawLine(P.onHero.copy(alpha = 0.45f), Offset(tx, size.height - 7.dp.toPx()), Offset(tx, size.height), 2.dp.toPx(), StrokeCap.Round)
+            },
+    ) {
+        // Dark text everywhere; where a dark (below-target) fill passes under it, the text turns light.
+        label(P.onHero)
+        if (low) Box(Modifier.fillMaxSize().drawWithContent {
+            clipRect(right = size.width * (pct / 100f) * grow.value) { this@drawWithContent.drawContent() }
+        }) { label(Color.White) }
     }
 }
 
