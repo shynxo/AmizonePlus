@@ -123,6 +123,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun webLoginFinished() {
         com.student.amizoneplus.data.Http.persistSession()
+        com.student.amizoneplus.data.SessionLog.add("WEB LOGIN done jar: ${com.student.amizoneplus.data.SessionLog.jar()}")
         val c = pendingCreds
         _state.update { it.copy(webLoginOpen = false, needsWebLogin = false, humanCheck = false, error = null) }
         if (_state.value.status != Status.SignedIn && c != null) enterApp(c) else refresh()

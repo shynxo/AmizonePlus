@@ -171,7 +171,12 @@ fun TodayScreen(
                             nextExam != null -> {
                                 // Short name big (OOPs, DSA…), the full name small underneath, like the notification.
                                 val short = com.student.amizoneplus.logic.shortCourseName(nextExam.name)
-                                T("EXAM: ${short.uppercase().replace("OOPS", "OOPs")}", Type.headline.copy(fontSize = 27.sp()), maxLines = 1)
+                                // Shrinks to fit rather than cutting the name off ("EXAM: ELECTR…").
+                                androidx.compose.foundation.text.BasicText(
+                                    "EXAM: ${short.uppercase().replace("OOPS", "OOPs")}",
+                                    style = Type.headline.copy(fontSize = 27.sp(), color = P.text), maxLines = 1,
+                                    autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 16.sp(), maxFontSize = 27.sp()),
+                                )
                                 if (!short.equals(nextExam.name, ignoreCase = true))
                                     T(nextExam.name, Type.body, sub = true, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
                                 // When first: if the line is too long, it's "Regular" that gets cut, not the date.

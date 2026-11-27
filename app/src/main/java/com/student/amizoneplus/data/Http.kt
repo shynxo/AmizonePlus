@@ -38,6 +38,7 @@ object Http {
 
     fun init(context: Context) {
         runCatching { UA = WebSettings.getDefaultUserAgent(context.applicationContext) }
+        SessionLog.init(context.applicationContext)
     }
 
     private const val KEEP_MS = 14L * 86_400_000
@@ -76,6 +77,15 @@ object Http {
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .addInterceptor { chain -> chain.proceed(chain.request().newBuilder().header("User-Agent", UA).build()) }
+            // Journal every cookie Amizone sets (names + value fingerprints only).
+            .addNetworkInterceptor { chain ->
+                val res = chain.proceed(chain.request())
+                val set = res.headers("Set-Cookie")
+                if (set.isNotEmpty()) SessionLog.add("SET ${res.code} ${chain.request().url.encodedPath} " +
+                    set.joinToString(" ") { c -> c.substringBefore(';').let { kv -> kv.substringBefore('=') + "=" + SessionLog.fp(kv.substringAfter('=')) } +
+                        c.split(';').drop(1).map { it.trim() }.filter { a -> a.startsWith("domain", true) || a.startsWith("expires", true) || a.startsWith("max-age", true) || a.startsWith("path", true) }.joinToString(",", "[", "]") })
+                res
+            }
             .build()
     }
 }

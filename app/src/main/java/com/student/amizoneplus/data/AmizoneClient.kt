@@ -72,6 +72,7 @@ class AmizoneClient(private val credentials: () -> Credentials?) {
     suspend fun get(path: String, ajax: Boolean = false): String {
         var res = raw(path, ajax = ajax)
         if (Parsers.isLoginPage(res.text)) {
+            SessionLog.add("EXPIRED on $path (${res.code}) jar: ${SessionLog.jar()}")
             login()
             res = raw(path, ajax = ajax)
             if (Parsers.isLoginPage(res.text)) throw AmizoneException.NeedsWebLogin("Could not stay signed in to Amizone.")
@@ -89,6 +90,7 @@ class AmizoneClient(private val credentials: () -> Credentials?) {
         val d = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
         val res = raw("/Calendar/home/GetDiaryEvents?start=$d&end=$d", ajax = true)
         val ok = !Parsers.isLoginPage(res.text)
+        SessionLog.add("PING ${res.code} ${java.net.URI(res.url).path} alive=$ok len=${res.text.length} jar: ${SessionLog.jar()}")
         if (ok) Http.persistSession()
         return ok
     }
