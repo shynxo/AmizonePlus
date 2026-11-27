@@ -240,6 +240,8 @@ fun HeroPage(
     banner: (@Composable () -> Unit)? = null,
     scroll: ScrollState = rememberScrollState(),
     heroModifier: Modifier = Modifier, // lets a caller clip/share-bind the hero band itself
+    /** False: no dark sheet below; the colour fills the whole page and the hero is the page. */
+    sheet: Boolean = true,
     hero: @Composable ColumnScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -250,6 +252,21 @@ fun HeroPage(
     var heroH by remember { mutableFloatStateOf(0f) }
     val overlap = 28.dp
 
+    if (!sheet) {
+        Box(Modifier.fillMaxSize().background(heroColor)) {
+            StretchRefresh(refreshing, onRefresh, Modifier.fillMaxSize()) {
+                Column(
+                    Modifier.fillMaxSize().background(heroColor).verticalScroll(scroll)
+                        .padding(top = statusTop + 8.dp, start = L.page, end = L.page, bottom = navClearance),
+                ) {
+                    banner?.let { Box(Modifier.padding(bottom = 12.dp)) { it() } }
+                    hero()
+                    content()
+                }
+            }
+        }
+        return
+    }
     Box(Modifier.fillMaxSize().background(P.bg)) {
         StretchRefresh(refreshing, onRefresh, Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
