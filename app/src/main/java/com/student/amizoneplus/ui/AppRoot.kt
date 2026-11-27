@@ -43,15 +43,12 @@ import com.student.amizoneplus.ui.screens.BadgeGallery
 import com.student.amizoneplus.ui.screens.Celebration
 import com.student.amizoneplus.ui.screens.LmsScreen
 import com.student.amizoneplus.ui.screens.LoginScreen
-import com.student.amizoneplus.ui.screens.MENU_CLOSE_MS
-import com.student.amizoneplus.ui.screens.MENU_OPEN_MS
 import com.student.amizoneplus.ui.screens.MoreScreen
 import com.student.amizoneplus.ui.screens.QuickMenuOverlay
 import com.student.amizoneplus.ui.screens.ScheduleScreen
 import com.student.amizoneplus.ui.screens.SubjectsScreen
 import com.student.amizoneplus.ui.screens.TodayScreen
 import com.student.amizoneplus.ui.screens.WebLoginSheet
-import com.student.amizoneplus.ui.screens.screenExit
 import com.student.amizoneplus.ui.shell.ErrorBanner
 import com.student.amizoneplus.ui.shell.LocalMenu
 import com.student.amizoneplus.ui.shell.MenuController
@@ -119,22 +116,21 @@ private fun Main(vm: AppViewModel, s: UiState) {
     val m = remember { Animatable(0f) }
     // The screen's ease-back and the blur run on their own smooth curve (the rows' timer is linear).
     val z = remember { Animatable(0f) }
-    // The menu blurs everything below it: screens, status bar and nav (with their own blurs).
-    val menuHaze = rememberHazeState()
+    // Where the menu button that opened the menu sits (the close button lands exactly there).
+    var menuAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     // Backdrop (blur + slight ease-back of the screen) on one soft, no-overshoot spring;
     // the rows bounce in on their own springs inside the overlay.
     fun openMenu() {
         if (menuOpen) return
         haptics.expand(); menuMounted = true; menuOpen = true
-        scope.launch { z.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 420f)) }
+        scope.launch { z.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.82f, stiffness = 360f)) }
     }
     fun closeMenu(after: (() -> Unit)? = null) {
         if (!menuOpen) { after?.invoke(); return }
         haptics.collapse(); menuOpen = false
         scope.launch {
             // Rows fold back first (~0.2 s), the backdrop follows and settles; then unmount.
-            kotlinx.coroutines.delay(90) // let the cards start blurring away first
-            z.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 520f))
+            z.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 420f))
             if (!menuOpen) menuMounted = false
             after?.invoke()
         }
@@ -207,12 +203,12 @@ private fun Main(vm: AppViewModel, s: UiState) {
         }
     }
     CompositionLocalProvider(
-        LocalMenu provides MenuController(menuOpen, ::openMenu) { closeMenu() },
+        LocalMenu provides MenuController(menuOpen, ::openMenu, { closeMenu() }) { r -> if (!menuMounted) menuAnchor = r },
         com.student.amizoneplus.ui.pets.LocalPetWorld provides pets,
     ) {
         Box(Modifier.fillMaxSize()) {
           // Everything here (screens + status bar + nav) is what the quick menu blurs.
-          Box(Modifier.fillMaxSize().hazeSource(menuHaze)) {
+          Box(Modifier.fillMaxSize()) {
             // Everything under the nav is a blur source for the nav's progressive blur.
             Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
                 // Swipe left / right on any free space to move between tabs. Rows that scroll
@@ -249,8 +245,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
                         }
                     }
                     .graphicsLayer {
-                        val sc = 1f - 0.03f * z.value
-                        scaleX = sc; scaleY = sc
+                        // (No ease-back under the menu: its close button must sit exactly on the page's menu button.)
                         translationX = swipe.value
                     }) {
                     AnimatedContent(
@@ -286,7 +281,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
             // Pets roam above the screens and the nav (so they can be carried onto a tab).
             com.student.amizoneplus.ui.pets.PetLayer(pets, s.settings.pets, active = !menuMounted && web == null && !gallery && s.celebrate == null)
 
-            if (menuMounted) QuickMenuOverlay(menuOpen, { z.value }, menuHaze, { closeMenu() }) { path, title ->
+            if (menuMounted) QuickMenuOverlay(menuOpen, { z.value }, menuAnchor, { closeMenu() }) { path, title ->
                 // Sections the app already shows natively open in the app's own UI.
                 when (path.lowercase()) {
                     "/examination/examschedule" -> { scheduleFocus = "exams"; go(Route.Schedule) }

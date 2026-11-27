@@ -43,6 +43,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import com.student.amizoneplus.ui.pets.perch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -85,11 +90,74 @@ import dev.chrisbanes.haze.blur.hazeBlur
 enum class Route { Today, Schedule, Subjects, Lms, More }
 
 /** The pull-down quick menu, reachable from every screen. */
-class MenuController(val isOpen: Boolean, val open: () -> Unit, val close: () -> Unit) {
+class MenuController(
+    val isOpen: Boolean,
+    val open: () -> Unit,
+    val close: () -> Unit,
+    /** Menu buttons report where they are, so the open menu's close button lands exactly on them. */
+    val anchor: (androidx.compose.ui.geometry.Rect) -> Unit = {},
+) {
     fun toggle() = if (isOpen) close() else open()
 }
 
 val LocalMenu = compositionLocalOf { MenuController(false, {}, {}) }
+
+/** Reports this button's on-screen box to the menu (centre + unscaled size, so a press-shrink doesn't skew it). */
+fun Modifier.menuAnchor(menu: MenuController): Modifier = onGloballyPositioned { c ->
+    val b = c.boundsInWindow()
+    val w = c.size.width.toFloat(); val h = c.size.height.toFloat()
+    menu.anchor(androidx.compose.ui.geometry.Rect(b.center.x - w / 2, b.center.y - h / 2, b.center.x + w / 2, b.center.y + h / 2))
+}
+
+/**
+ * The menu icon: a 3×3 grid of dots at [t] = 0, a cross at [t] = 1, morphing in between.
+ * The four edge dots shrink away while the corner and centre dots turn 45° and stretch
+ * into the cross's two bars; the whole glyph turns a quarter on the way for a little life.
+ */
+@Composable
+fun MenuGlyph(t: () -> Float, color: Color, modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val k = t().coerceIn(0f, 1f).let { it * it * (3f - 2f * it) } // smoothstep
+        val s = size.minDimension
+        val c = center
+        val q = s * 0.21f            // dot size
+        val d = s * 0.36f            // dot spacing
+        val arm = s * 0.5f           // half-length of each cross bar
+        val w = s * 0.13f            // cross bar thickness
+        fun mix(a: Float, b: Float) = a + (b - a) * k
+        rotate(90f * k, c) {
+            // Edge dots fade and shrink away in the first part of the morph.
+            val e = (1f - k / 0.6f).coerceIn(0f, 1f)
+            if (e > 0f) for ((i, j) in listOf(0 to -1, 0 to 1, -1 to 0, 1 to 0)) {
+                val z = q * e
+                drawRoundRect(color, Offset(c.x + i * d - z / 2, c.y + j * d - z / 2), Size(z, z), CornerRadius(z * 0.32f))
+            }
+            // Diagonals: three dots each, turning and stretching into one continuous bar.
+            for (dir in listOf(1f, -1f)) {
+                for (n in -1..1) {
+                    val dist = mix(d * 1.4142f, arm * 2f / 3f) * n           // distance along the diagonal
+                    val px = c.x + dist * 0.7071f
+                    val py = c.y + dist * 0.7071f * dir
+                    val len = mix(q, arm * 2f / 3f + w * 0.9f)
+                    val th = mix(q, w)
+                    rotate(45f * k * dir, Offset(px, py)) {
+                        drawRoundRect(color, Offset(px - len / 2, py - th / 2), Size(len, th), CornerRadius(mix(q * 0.32f, th / 2)))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A round menu button (cream), the same one the open menu shows as its close button. */
+@Composable
+fun MenuCircleButton(size: androidx.compose.ui.unit.Dp = 48.dp, bg: Color = P.cream, fg: Color = P.onCream) {
+    val menu = LocalMenu.current
+    Box(
+        Modifier.menuAnchor(menu).perch().size(size).press({ menu.toggle() }, Feel.Select, 0.9f).background(bg, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) { MenuGlyph({ 0f }, fg, Modifier.size(size * 0.44f)) }
+}
 
 fun Modifier.swipeDownToOpen(onOpen: () -> Unit): Modifier = pointerInput(Unit) {
     var total = 0f
@@ -101,8 +169,7 @@ fun Modifier.swipeDownToOpen(onOpen: () -> Unit): Modifier = pointerInput(Unit) 
 /** Menu toggle shown in headers. */
 @Composable
 fun MenuButton(bg: Color = P.cream, fg: Color = P.onCream) {
-    val menu = LocalMenu.current
-    CircleButton(if (menu.isOpen) Icons.Outlined.Close else Icons.Outlined.Apps, { menu.toggle() }, 48.dp, bg, fg, Feel.Select)
+    MenuCircleButton(48.dp, bg, fg)
 }
 
 /** Bar used by the menu overlay & sheets: wordmark + close/menu. */

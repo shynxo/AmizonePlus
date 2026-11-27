@@ -136,10 +136,7 @@ fun TodayScreen(
                         .press({ onAvatar(avatarBox) }, Feel.Select, 0.88f),
                 ) { Avatar(name.ifEmpty { "A" }, P.sun, 52.dp) }
                 T(if (first.isNotEmpty()) "Hi, $first!" else "Hi!", Type.label.copy(fontSize = 18.sp()), modifier = Modifier.weight(1f).padding(start = 14.dp), maxLines = 1)
-                CircleButton(Icons.Outlined.Apps, menu.open, 52.dp)
-                Spacer(Modifier.width(10.dp))
-                CircleButton(Icons.Outlined.NotificationsNone, { go(if (low.isNotEmpty()) Route.Subjects else Route.Schedule) }, 52.dp,
-                    badge = low.isNotEmpty() || (nextExam?.timeMs?.let { it - now < 3 * 86_400_000L } == true))
+                com.student.amizoneplus.ui.shell.MenuCircleButton(52.dp)
             }
         }
         Rise(i++) {

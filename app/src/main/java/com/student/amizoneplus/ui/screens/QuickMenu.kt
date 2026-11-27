@@ -1,8 +1,11 @@
 package com.student.amizoneplus.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,52 +16,60 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.student.amizoneplus.ui.kit.Feel
 import com.student.amizoneplus.ui.kit.T
-import com.student.amizoneplus.ui.kit.UnfoldCard
 import com.student.amizoneplus.ui.kit.press
-import com.student.amizoneplus.ui.shell.HeaderInk
+import com.student.amizoneplus.ui.shell.MenuGlyph
 import com.student.amizoneplus.ui.theme.L
 import com.student.amizoneplus.ui.theme.LocalHaptics
 import com.student.amizoneplus.ui.theme.P
 import com.student.amizoneplus.ui.theme.Type
-import kotlin.math.pow
-import androidx.compose.ui.graphics.asComposeRenderEffect
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.animation.core.tween
-import dev.chrisbanes.haze.blur.HazeBlurStyle
-import dev.chrisbanes.haze.blur.HazeColorEffect
-import dev.chrisbanes.haze.blur.hazeBlur
+import kotlin.math.roundToInt
 
 data class MenuItem(val label: String, val path: String, val icon: ImageVector)
 data class MenuGroup(val title: String, val icon: ImageVector, val items: List<MenuItem>)
@@ -115,159 +126,230 @@ val MENU_GROUPS = listOf(
     )),
 )
 
-/* Timing (ms), matching the reference: rows unfurl 55 ms apart. */
-const val ROW_DUR = 340
-const val ROW_STAGGER = 40
-val MENU_OPEN_MS = ROW_DUR + ROW_STAGGER * (MENU_GROUPS.size - 1) + 80
-val MENU_CLOSE_MS = (MENU_OPEN_MS * 0.6f).toInt()
+/** Kept for callers that time things against the menu. */
+const val MENU_OPEN_MS = 420
+const val MENU_CLOSE_MS = 340
 
-private fun easeOut(t: Float) = 1f - (1f - t).pow(4)
-
-/** How far the screen underneath has slid up into the header (0..1), for a given menu progress. */
-fun screenExit(m: Float) = (m * MENU_OPEN_MS / 300f).coerceIn(0f, 1f).let { easeOut(it) }
-
+/**
+ * The quick menu.
+ *
+ * A solid panel grows out of the menu button you tapped, a circle expanding from its centre,
+ * and covers the top of the screen down to just past the last option. The rest of the page stays
+ * visible under a light dim, and tapping it closes the menu. The button itself stays exactly where
+ * it was, its grid of dots folding into a cross.
+ *
+ * The options are one connected list. Opening a section splits the list around it: gaps open
+ * above and below, the section becomes its own rounded card, its pages un-blur into view and
+ * its arrow turns. Only one section is open at a time.
+ */
 @Composable
-fun QuickMenuOverlay(open: Boolean, fade: () -> Float, hazeState: dev.chrisbanes.haze.HazeState, onClose: () -> Unit, openPage: (String, String) -> Unit) {
+fun QuickMenuOverlay(
+    open: Boolean,
+    progress: () -> Float,
+    anchor: Rect?,
+    onClose: () -> Unit,
+    openPage: (String, String) -> Unit,
+) {
     val haptics = LocalHaptics.current
-    var openGroup by remember { mutableStateOf<String?>(null) }
+    val density = LocalDensity.current
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val rowStep = 68.dp + L.block
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    // Where the blur fades out: just below the last row — or the whole screen once a group is open.
-    var rowsBottom by remember { mutableFloatStateOf(0f) }
-    var screenH by remember { mutableFloatStateOf(0f) }
-    val fadeLen = with(density) { 150.dp.toPx() }
-    // The edge starts at the header and travels down with the rows as they unfurl.
-    val headerBottom = with(density) { (statusTop + L.page + L.header).toPx() }
-    // Each row has its own timer, staggered top to bottom in, bottom to top out.
-    val rows = remember { List(MENU_GROUPS.size) { androidx.compose.animation.core.Animatable(0f) } }
-    LaunchedEffect(open) {
-        rows.forEachIndexed { i, a ->
-            launch {
-                // Cards come into focus where they belong: unblur + a small rise. Snappy, so
-                // the menu feels instant; leaving is a hair longer and deeper than arriving.
-                if (open) {
-                    kotlinx.coroutines.delay(i * 16L)
-                    a.animateTo(1f, tween(190, easing = com.student.amizoneplus.ui.theme.Motion.emphasized))
-                } else {
-                    kotlinx.coroutines.delay((rows.size - 1 - i) * 12L)
-                    a.animateTo(0f, tween(210, easing = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0f, 0.7f, 0.2f)))
+    var screen by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
+    // Where the button sits; fall back to a typical top-right spot.
+    val btn = anchor ?: with(density) {
+        val sz = 52.dp.toPx(); val cx = screen.width - L.page.toPx() - sz / 2; val cy = (statusTop + 10.dp + 30.dp).toPx()
+        Rect(cx - sz / 2, cy - sz / 2, cx + sz / 2, cy + sz / 2)
+    }
+    var listBottom by remember { mutableFloatStateOf(0f) }
+
+    var openGroup by remember { mutableStateOf<Int?>(null) }
+    val sel = remember { List(MENU_GROUPS.size) { Animatable(0f) } }
+    LaunchedEffect(openGroup) {
+        sel.forEachIndexed { i, a ->
+            launch { a.animateTo(if (i == openGroup) 1f else 0f, spring(dampingRatio = 0.86f, stiffness = 300f)) }
+        }
+    }
+    val scroll = rememberScrollState()
+
+    Box(
+        Modifier.fillMaxSize()
+            .onSizeChanged { screen = androidx.compose.ui.geometry.Size(it.width.toFloat(), it.height.toFloat()) }
+            // The page below the panel: a light dim; tap it to close.
+            .drawBehind { drawRect(Color.Black, alpha = (if (P.cur.dark) 0.45f else 0.22f) * progress().coerceIn(0f, 1f)) }
+            .clickable(remember { MutableInteractionSource() }, indication = null) { onClose() },
+    ) {
+        // ── The panel: a circle growing from the button, clipped to the panel's rounded shape ──
+        val radius = with(density) { 30.dp.toPx() }
+        Box(
+            Modifier.fillMaxSize()
+                .drawWithContent {
+                    val p = progress().coerceIn(0f, 1.2f)
+                    val bottom = (listBottom + 22.dp.toPx()).coerceIn(btn.bottom + 40.dp.toPx(), size.height)
+                    val c = btn.center
+                    val far = listOf(Offset(0f, 0f), Offset(size.width, 0f), Offset(0f, bottom), Offset(size.width, bottom))
+                        .maxOf { (it - c).getDistance() }
+                    val r = btn.width / 2 + (far - btn.width / 2) * p
+                    val circle = Path().apply { addOval(Rect(c, r)) }
+                    val panel = Path().apply {
+                        addRoundRect(RoundRect(0f, -radius, size.width, bottom, CornerRadius(radius)))
+                    }
+                    val shape = Path().apply { op(circle, panel, PathOperation.Intersect) }
+                    // Button-coloured only while it's still about button-sized, so it reads as the
+                    // button swelling open (and shrinking back into it), never as a big pale disc.
+                    val tint = lerp(P.cream, P.sheet, ((r - btn.width / 2) / (btn.width * 0.6f)).coerceIn(0f, 1f))
+                    clipPath(shape) {
+                        drawRect(tint)
+                        this@drawWithContent.drawContent()
+                    }
                 }
+                // Swallow taps on the panel itself (only the dim outside closes it); swipe up to close.
+                .pointerInput(Unit) {
+                    var total = 0f
+                    detectVerticalDragGestures(onDragStart = { total = 0f }, onDragEnd = { if (total < -48.dp.toPx()) onClose() }) { _, dy -> total += dy }
+                },
+        ) {
+            // Title, level with the button.
+            val titleTop = with(density) { btn.center.y.toDp() } - 16.dp
+            T("AMIZONE+", Type.headline, modifier = Modifier
+                .padding(start = L.page, top = titleTop.coerceAtLeast(0.dp))
+                .graphicsLayer { alpha = ((progress() - 0.25f) / 0.4f).coerceIn(0f, 1f) })
+
+            val listTop = with(density) { btn.bottom.toDp() } + 18.dp
+            Column(
+                Modifier.fillMaxWidth()
+                    .padding(top = listTop)
+                    .heightIn(max = with(density) { screen.height.toDp() } - listTop)
+                    .verticalScroll(scroll)
+                    .padding(start = L.page, end = L.page, bottom = navBottom + 24.dp),
+            ) {
+                Column(
+                    Modifier
+                        .clickable(remember { MutableInteractionSource() }, indication = null) {}
+                        .onGloballyPositioned { listBottom = it.boundsInWindow().bottom },
+                ) {
+                    MENU_GROUPS.forEachIndexed { i, g ->
+                        val prev = if (i > 0) sel[i - 1] else null
+                        val next = if (i < MENU_GROUPS.lastIndex) sel[i + 1] else null
+                        MenuRow(
+                            group = g,
+                            index = i,
+                            sel = { sel[i].value },
+                            splitAbove = { if (prev == null) 1f else maxOf(sel[i].value, prev.value) },
+                            splitBelow = { if (next == null) 1f else maxOf(sel[i].value, next.value) },
+                            appear = { ((progress() - 0.18f - 0.045f * i) / 0.42f).coerceIn(0f, 1f) },
+                            onToggle = {
+                                if (openGroup == i) { haptics.collapse(); openGroup = null } else { haptics.expand(); openGroup = i }
+                            },
+                            openPage = openPage,
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── The button, exactly where it was, dots folding into a cross ──
+        with(density) {
+            Box(
+                Modifier
+                    .offset { IntOffset(btn.left.roundToInt(), btn.top.roundToInt()) }
+                    .size(btn.width.toDp(), btn.height.toDp())
+                    .press(onClose, Feel.Select, 0.9f)
+                    .background(P.cream, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                MenuGlyph({ progress() }, P.onCream, Modifier.size(btn.width.toDp() * 0.44f))
             }
         }
     }
-    // The blur edge rides with the last row, so blur and options arrive together; opening
-    // a group spreads it over the whole screen on a soft spring.
-    val spread by androidx.compose.animation.core.animateFloatAsState(
-        if (openGroup != null) 1f else 0f, androidx.compose.animation.core.spring(dampingRatio = 0.9f, stiffness = 220f), label = "spread",
-    )
-    val lastRow = rows.last().value
-    val restEdge = if (rowsBottom > 0f) rowsBottom + with(density) { 12.dp.toPx() } else headerBottom
-    val rowsEdge = headerBottom + (restEdge - headerBottom) * lastRow.coerceAtLeast(0f)
-    val edge = rowsEdge + ((screenH + fadeLen) - rowsEdge) * spread
+}
 
-    Box(Modifier.fillMaxSize()) {
-        // The live app, blurred where the menu is: full strength down to the last row,
-        // then fading out over ~150dp. Opening a group spreads it over the whole screen.
-        // Blur and tint fade in and out with the menu on one smooth curve.
-        Box(
-            Modifier.fillMaxSize()
-                .onSizeChanged { screenH = it.height.toFloat() }
-                .graphicsLayer { alpha = fade() }
-                .hazeBlur(
-                    dev.chrisbanes.haze.HazeInput.Backdrop(hazeState),
-                    HazeBlurStyle {
-                        blurRadius(24.dp)
-                        // A black tint (not the page colour) so the blur reads deep, not milky.
-                        colorEffects(listOf(HazeColorEffect.tint(Color.Black.copy(alpha = if (P.cur.dark) 0.32f else 0.14f))))
-                        progressive(dev.chrisbanes.haze.HazeProgressive.verticalGradient(
-                            startY = edge, startIntensity = 1f, endY = edge + fadeLen, endIntensity = 0f,
-                        ))
-                    },
-                )
-                .drawBehind {
-                    // A black gradient that follows the blur: darkest under the header,
-                    // easing off down to the blur's edge, then gone with it.
-                    val k = if (P.cur.dark) 1f else 0.45f
-                    drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.62f * k),
-                        (edge / size.height).coerceIn(0f, 1f) to Color.Black.copy(alpha = 0.38f * k),
-                        ((edge + fadeLen) / size.height).coerceIn(0f, 1f) to Color.Transparent,
-                    ))
-                },
-        )
-
-        // Rows live in a clipped area that starts at the header's bottom edge,
-        // so they appear to slide out from behind it.
-        Box(Modifier.fillMaxSize().padding(top = statusTop + L.page + L.header).clipToBounds()) {
-            Column(
-                Modifier.fillMaxSize()
-                    // Tap anywhere that isn't a card to close the menu.
-                    .clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { onClose() }
-                    .verticalScroll(rememberScrollState())
-                    .padding(top = L.joint, start = L.page, end = L.page, bottom = navBottom + 120.dp),
-                verticalArrangement = Arrangement.spacedBy(L.block),
+/** One section of the list, plus its pages when open. */
+@Composable
+private fun MenuRow(
+    group: MenuGroup,
+    index: Int,
+    sel: () -> Float,
+    splitAbove: () -> Float,
+    splitBelow: () -> Float,
+    appear: () -> Float,
+    onToggle: () -> Unit,
+    openPage: (String, String) -> Unit,
+) {
+    val gap = 10.dp
+    val r = 22.dp
+    Box(
+        Modifier
+            .layout { m, c ->
+                // Gaps open above / below as the list splits around the open section.
+                val top = if (index == 0) 0 else (gap.toPx() * splitAbove() * 0.5f).roundToInt()
+                val bottom = if (index == MENU_GROUPS.lastIndex) 0 else (gap.toPx() * splitBelow() * 0.5f).roundToInt()
+                val p = m.measure(c)
+                layout(p.width, p.height + top + bottom) { p.place(0, top) }
+            }
+            .graphicsLayer {
+                val a = appear()
+                alpha = a
+                translationY = 10.dp.toPx() * (1f - a)
+            }
+            .drawBehind {
+                val k = sel()
+                val tr = r.toPx() * (if (index == 0) 1f else splitAbove())
+                val br = r.toPx() * (if (index == MENU_GROUPS.lastIndex) 1f else splitBelow())
+                drawPath(Path().apply {
+                    addRoundRect(RoundRect(Rect(0f, 0f, size.width, size.height),
+                        topLeft = CornerRadius(tr), topRight = CornerRadius(tr),
+                        bottomRight = CornerRadius(br), bottomLeft = CornerRadius(br)))
+                }, lerp(P.bg, P.card, k))
+            },
+    ) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 60.dp)
+                    .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onToggle)
+                    .padding(horizontal = L.pad),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Column(
-                    Modifier.onGloballyPositioned { rowsBottom = it.boundsInWindow().bottom },
-                    verticalArrangement = Arrangement.spacedBy(L.block),
-                ) {
-                MENU_GROUPS.forEachIndexed { i, g ->
-                    Box(Modifier.graphicsLayer {
-                        val t = rows[i].value
-                        // Leaving is a little more pronounced than arriving: deeper blur, further sink.
-                        val k = if (open) 1f else 1.6f
-                        alpha = t.coerceIn(0f, 1f)
-                        translationY = 14.dp.toPx() * k * (1f - t)
-                        val sc = 1f - (0.03f * k) * (1f - t)
-                        scaleX = sc; scaleY = sc
-                        val r = 18.dp.toPx() * k * (1f - t)
-                        renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && r > 0.5f)
-                            android.graphics.RenderEffect.createBlurEffect(r, r, android.graphics.Shader.TileMode.DECAL).asComposeRenderEffect()
+                Icon(group.icon, null, tint = P.lav, modifier = Modifier.size(20.dp))
+                T(group.title, Type.label, modifier = Modifier.weight(1f))
+                T("${group.items.size}", Type.caption, sub = true, modifier = Modifier.graphicsLayer { alpha = 1f - sel() })
+                Icon(Icons.Outlined.KeyboardArrowDown, null, tint = P.sub,
+                    modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = 180f * sel() })
+            }
+            // Pages: height grows with the split; they un-blur and rise into place.
+            Box(
+                Modifier
+                    .layout { m, c ->
+                        val k = sel()
+                        if (k <= 0.001f) return@layout layout(c.minWidth, 0) {}
+                        val p = m.measure(c)
+                        layout(p.width, (p.height * k.coerceAtMost(1f)).roundToInt()) { p.place(0, 0) }
+                    }
+                    .clipToBounds()
+                    .graphicsLayer {
+                        val k = sel().coerceIn(0f, 1f)
+                        alpha = ((k - 0.25f) / 0.6f).coerceIn(0f, 1f)
+                        translationY = -8.dp.toPx() * (1f - k)
+                        val b = 14.dp.toPx() * (1f - k)
+                        renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && b > 0.5f)
+                            android.graphics.RenderEffect.createBlurEffect(b, b, android.graphics.Shader.TileMode.DECAL).asComposeRenderEffect()
                         else null
-                    }) {
-                        UnfoldCard(
-                            open = openGroup == g.title,
-                            onToggle = {
-                                if (openGroup == g.title) { haptics.collapse(); openGroup = null } else { haptics.expand(); openGroup = g.title }
-                            },
-                            head = { onInk ->
-                                Icon(g.icon, null, tint = if (onInk) P.lav else P.text, modifier = Modifier.size(20.dp))
-                                T(g.title, Type.label, ink = onInk, modifier = Modifier.weight(1f))
-                                if (!onInk) T("${g.items.size}", Type.caption, sub = true)
-                                Icon(if (onInk) Icons.Outlined.KeyboardArrowDown else Icons.AutoMirrored.Outlined.KeyboardArrowRight, null,
-                                    tint = if (onInk) P.onInk else P.text)
-                            },
+                    },
+            ) {
+                Column(Modifier.padding(start = L.pad, end = L.pad, bottom = 8.dp)) {
+                    group.items.forEachIndexed { j, it ->
+                        if (j > 0) HorizontalDivider(color = P.line, thickness = 0.5.dp)
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 54.dp).press({ openPage(it.path, it.label) }, Feel.Tap),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
-                            Column(Modifier.padding(horizontal = L.pad, vertical = 8.dp)) {
-                                g.items.forEachIndexed { j, it ->
-                                    if (j > 0) HorizontalDivider(color = P.onInkFaint, thickness = 0.5.dp)
-                                    Row(
-                                        Modifier.fillMaxWidth().heightIn(min = 58.dp).press({ openPage(it.path, it.label) }, Feel.Tap),
-                                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                    ) {
-                                        Icon(it.icon, null, tint = P.lav, modifier = Modifier.size(21.dp))
-                                        T(it.label, Type.body, ink = true, modifier = Modifier.weight(1f))
-                                        Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, tint = P.onInkFaint, modifier = Modifier.size(16.dp))
-                                    }
-                                }
-                            }
+                            Icon(it.icon, null, tint = P.sub, modifier = Modifier.size(19.dp))
+                            T(it.label, Type.body, modifier = Modifier.weight(1f))
+                            Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, tint = P.faint, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
-                }
             }
         }
-
-        // The real header card on top; swipe up on it to close.
-        HeaderInk(
-            Modifier.padding(top = statusTop + L.page, start = L.page, end = L.page)
-                .graphicsLayer { alpha = fade().coerceIn(0f, 1f) }
-                .pointerInput(Unit) {
-                var total = 0f
-                detectVerticalDragGestures(onDragStart = { total = 0f }, onDragEnd = { if (total < -36.dp.toPx()) onClose() }) { _, dy -> total += dy }
-            },
-        )
     }
 }
