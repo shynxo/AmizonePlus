@@ -1,5 +1,7 @@
 package com.student.amizoneplus.ui.screens
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.outlined.UnfoldLess
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.animation.core.animateFloat
@@ -120,21 +122,7 @@ fun SubjectsScreen(
     val courses: List<Course> = data?.courses?.ifEmpty { null }
         ?: data?.attendance.orEmpty().map { Course(it.code, it.name, "", it.attended, it.held, null, null) }
 
-    SharedTransitionLayout {
-        AnimatedContent(
-            open,
-            transitionSpec = { fadeIn(tween(240, easing = Motion.emphasized)) togetherWith fadeOut(tween(160)) },
-            label = "subjects",
-        ) { code ->
-            val course = courses.firstOrNull { it.code == code }
-            if (course == null) {
-                SubjectList(s, courses, onRefresh, banner, updateSettings, this@SharedTransitionLayout, this) { haptics.expand(); open = it }
-            } else {
-                SubjectDetail(s, course, courses.indexOf(course), onRefresh, { haptics.collapse(); open = null }, { openLms(course.code) },
-                    updateSettings, this@SharedTransitionLayout, this)
-            }
-        }
-    }
+    SubjectList(s, courses, onRefresh, banner, updateSettings, open, { code -> if (code == null) haptics.collapse() else haptics.expand(); open = code }, openLms)
 }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -145,9 +133,9 @@ private fun SubjectList(
     onRefresh: () -> Unit,
     banner: (@Composable () -> Unit)?,
     updateSettings: ((Settings) -> Settings) -> Unit,
-    shared: SharedTransitionScope,
-    anim: AnimatedVisibilityScope,
-    onOpen: (String) -> Unit,
+    openCode: String?,
+    onOpen: (String?) -> Unit,
+    openLms: (String) -> Unit,
 ) {
     val t = s.settings.threshold
     var filter by rememberSaveable { mutableStateOf("all") }
@@ -188,9 +176,20 @@ private fun SubjectList(
                 bg = P.coralSoft, fg = P.onHero, activeBg = P.onHero, activeFg = Color.White)
         },
     ) {
-        // The sheet that slides up over the coral: every subject as a tile; tap one to open it in place.
-        SubjectBars(shown, t, s, Modifier.fillMaxWidth(), shared, anim, onOpen)
-        if (shown.isEmpty()) T("No subjects here.", Type.body, sub = true, modifier = Modifier.padding(top = 8.dp))
+        // The sheet over the coral: every subject as a tile. Tap one and it grows to fill the
+        // sheet (the coral above stays put), its name and bar scaling into their new places.
+        SharedTransitionLayout {
+            AnimatedContent(
+                courses.firstOrNull { it.code == openCode },
+                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(140)) using androidx.compose.animation.SizeTransform(clip = false) },
+                label = "subjectSheet",
+            ) { c ->
+                if (c == null) Column {
+                    SubjectBars(shown, t, s, Modifier.fillMaxWidth(), this@SharedTransitionLayout, this@AnimatedContent) { onOpen(it) }
+                    if (shown.isEmpty()) T("No subjects here.", Type.body, sub = true, modifier = Modifier.padding(top = 8.dp))
+                } else ExpandedSubject(s, c, updateSettings, { onOpen(null) }, { openLms(c.code) }, this@SharedTransitionLayout, this@AnimatedContent)
+            }
+        }
     }
 }
 
@@ -245,7 +244,7 @@ private fun SubjectBars(
                                 boundsTransform = MorphBounds, clipInOverlayDuringTransition = OverlayClip(SquircleShape(24.dp)))
                             .blurMorph(anim)
                     }
-                    AttendanceTile(c, threshold, row * 2 + col, animate, false, m) { onOpen(c.code) }
+                    AttendanceTile(c, threshold, row * 2 + col, animate, false, m, shared, anim) { onOpen(c.code) }
                 }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
@@ -274,7 +273,11 @@ private fun Modifier.blurMorph(anim: AnimatedVisibilityScope): Modifier {
 }
 
 @Composable
-private fun AttendanceTile(c: Course, threshold: Int, index: Int, animate: Boolean, selected: Boolean, modifier: Modifier, onTap: () -> Unit) {
+@OptIn(ExperimentalSharedTransitionApi::class)
+private fun AttendanceTile(
+    c: Course, threshold: Int, index: Int, animate: Boolean, selected: Boolean, modifier: Modifier,
+    shared: SharedTransitionScope, anim: AnimatedVisibilityScope, onTap: () -> Unit,
+) {
     val none = c.held == 0
     val pct = if (none) 0f else percent(c.attended, c.held).toFloat()
     val low = !none && pct < threshold
@@ -302,10 +305,10 @@ private fun AttendanceTile(c: Course, threshold: Int, index: Int, animate: Boole
             .padding(start = 14.dp, end = 12.dp, top = 9.dp, bottom = 9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            T(name, Type.label, color = ink, maxLines = 1, modifier = Modifier.weight(1f))
+            T(name, Type.label, color = ink, maxLines = 1, modifier = Modifier.weight(1f).sharedName(c.code, shared, anim))
             Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, tint = ink.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
         }
-        Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(top = 4.dp).sharedBar(c.code, shared, anim), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.weight(1f).height(8.dp).drawBehind {
                     val h = size.height
@@ -326,14 +329,33 @@ private fun AttendanceTile(c: Course, threshold: Int, index: Int, animate: Boole
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun SubjectDetail(
+private fun Modifier.sharedName(code: String, shared: SharedTransitionScope, anim: AnimatedVisibilityScope): Modifier = with(shared) {
+    this@sharedName.sharedBounds(rememberSharedContentState("name-$code"), anim, boundsTransform = MorphBounds,
+        resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(androidx.compose.ui.layout.ContentScale.FillHeight, Alignment.CenterStart))
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun Modifier.sharedBar(code: String, shared: SharedTransitionScope, anim: AnimatedVisibilityScope): Modifier = with(shared) {
+    this@sharedBar.sharedBounds(rememberSharedContentState("bar-$code"), anim, boundsTransform = MorphBounds,
+        resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(androidx.compose.ui.layout.ContentScale.FillBounds, Alignment.CenterStart))
+}
+
+/**
+ * A subject opened in place: the tile grows to fill the sheet (the coral header stays), its
+ * name and attendance bar scale up into their spots, and everything the subject page had
+ * appears below: the semester plan with its classes-per-week stepper, what you must attend
+ * and can miss, extra classes if needed, the weekday chart, and Material / Syllabus.
+ * Collapse with the button at the top left (or Back).
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun ExpandedSubject(
     s: UiState,
     c: Course,
-    index: Int,
-    onRefresh: () -> Unit,
+    updateSettings: ((Settings) -> Settings) -> Unit,
     onClose: () -> Unit,
     openLms: () -> Unit,
-    updateSettings: ((Settings) -> Settings) -> Unit,
     shared: SharedTransitionScope,
     anim: AnimatedVisibilityScope,
 ) {
@@ -344,8 +366,13 @@ private fun SubjectDetail(
     val credits = basis?.first
     val hours = s.data?.hours?.get(c.code.replace(" ", "").uppercase())
     val fromAmizone = hours?.weekly?.takeIf { it > 0 } ?: s.data?.credits?.get(c.code)
-    val p = if (c.held > 0) percent(c.attended, c.held) else 0.0
+    val none = c.held == 0
+    val p = if (none) 0.0 else percent(c.attended, c.held)
+    val low = !none && p < t
     val plan = credits?.let { semesterPlan(c.attended, c.held, it, t) }
+    val name = com.student.amizoneplus.logic.shortCourseName(c.name, 12).replace("OOPS", "OOPs")
+    val ink = if (low) P.onHero else P.text
+    val fill = if (low) P.onHero else P.coral
 
     fun setCredits(n: Double) {
         haptics.select()
@@ -356,61 +383,82 @@ private fun SubjectDetail(
         }
     }
 
-    with(shared) {
-        Box(Modifier.fillMaxSize().sharedBounds(rememberSharedContentState("card-${c.code}"), anim, boundsTransform = MorphBounds, clipInOverlayDuringTransition = OverlayClip(SquircleShape(28.dp))).blurMorph(anim)) {
-            HeroPage(
-                heroColor = P.coral,
-                refreshing = s.refreshing,
-                onRefresh = onRefresh,
-                hero = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircleButton(Icons.AutoMirrored.Outlined.ArrowBack, onClose, 48.dp)
-                        Box(Modifier.weight(1f))
-                        Avatar(c.code, AVATAR_COLORS[index.coerceAtLeast(0) % AVATAR_COLORS.size], 48.dp)
-                    }
-                    T(c.name.uppercase(), Type.display, color = P.onHero, maxLines = 3,
-                        modifier = Modifier.padding(top = 18.dp).sharedElement(rememberSharedContentState("name-${c.code}"), anim))
-                    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Chip(c.code, Tone.Cream)
-                        if (c.type.isNotEmpty()) Chip(c.type, Tone.Cream)
-                    }
-                    Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        StatTile("%.0f%%".format(p), "${c.attended}/${c.held} held", P.coralSoft)
-                        StatTile(c.internals?.let { "%.0f".format(it.have) } ?: "—", c.internals?.let { "of %.0f internals".format(it.max) } ?: "internals", P.coralSoft)
-                    }
+    val screenH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
+    Column(
+        with(shared) {
+            Modifier.fillMaxWidth().heightIn(min = screenH * 0.62f)
+                .sharedBounds(rememberSharedContentState("card-${c.code}"), anim, boundsTransform = MorphBounds,
+                    clipInOverlayDuringTransition = OverlayClip(SquircleShape(28.dp)))
+        }
+            .background(if (low) P.coral else P.card, SquircleShape(28.dp))
+            .padding(18.dp),
+    ) {
+        // Collapse, top left.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(40.dp).press(onClose, Feel.Select, 0.88f).background(if (low) P.onHero.copy(alpha = 0.12f) else P.cardRaised, SquircleShape(50)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Outlined.UnfoldLess, null, tint = ink, modifier = Modifier.size(20.dp)) }
+            Spacer(Modifier.weight(1f))
+            Row(Modifier.blurMorph(anim), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip(c.code, Tone.Ink)
+                if (c.type.isNotEmpty()) Chip(c.type, Tone.Sun)
+            }
+        }
+        // Name, scaled up from the tile.
+        Text(name, style = Type.label.copy(fontSize = androidx.compose.ui.unit.TextUnit(30f, androidx.compose.ui.unit.TextUnitType.Sp),
+            lineHeight = androidx.compose.ui.unit.TextUnit(34f, androidx.compose.ui.unit.TextUnitType.Sp)),
+            color = ink, maxLines = 1, modifier = Modifier.padding(top = 16.dp).sharedName(c.code, shared, anim))
+        T(c.name, Type.caption, color = ink.copy(alpha = 0.65f), maxLines = 2, modifier = Modifier.padding(top = 2.dp).blurMorph(anim))
+        // Bar + percentage, scaled up from the tile.
+        Row(Modifier.padding(top = 16.dp).sharedBar(c.code, shared, anim), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.weight(1f).height(14.dp).drawBehind {
+                    val h = size.height
+                    drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, h)), ink.copy(alpha = 0.16f))
+                    val w = size.width * (p.toFloat() / 100f)
+                    if (w > 0f) drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(0f, 0f, w.coerceAtLeast(h), h)), fill)
+                    val tx = size.width * t / 100f
+                    drawLine(ink.copy(alpha = 0.5f), Offset(tx, -4.dp.toPx()), Offset(tx, h + 4.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
                 },
-            ) {
-                Card {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            T("SEMESTER PLAN", Type.title)
-                            T(planLine(basis, hours, plan?.basePlanned) + (plan?.extraHeld?.takeIf { it > 0 }?.let { " · $it extra held so far" } ?: ""),
-                                Type.caption, sub = true, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
-                        }
-                        Stepper(credits ?: 0.0, ::setCredits)
+            )
+            Text(if (none) "—" else "${p.roundToInt()}%", style = Type.num.copy(fontSize = androidx.compose.ui.unit.TextUnit(40f, androidx.compose.ui.unit.TextUnitType.Sp)),
+                color = ink, maxLines = 1, modifier = Modifier.padding(start = 14.dp))
+        }
+
+        Column(Modifier.blurMorph(anim)) {
+            T(if (none) "No classes held yet" else "${c.attended} of ${c.held} attended · " + statusText(c.attended, c.held, t, credits),
+                Type.body, color = ink.copy(alpha = 0.8f), modifier = Modifier.padding(top = 10.dp))
+            c.internals?.let { T("Internals: %.0f of %.0f".format(it.have, it.max), Type.caption, color = ink.copy(alpha = 0.6f), modifier = Modifier.padding(top = 4.dp)) }
+
+            // Semester plan, with the manual classes-per-week stepper.
+            Column(Modifier.padding(top = 18.dp).fillMaxWidth().background(P.cardRaised, SquircleShape(22.dp)).padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        T("SEMESTER PLAN", Type.title)
+                        T(planLine(basis, hours, plan?.basePlanned) + (plan?.extraHeld?.takeIf { it > 0 }?.let { " · $it extra held so far" } ?: ""),
+                            Type.caption, sub = true, maxLines = 3, modifier = Modifier.padding(top = 4.dp))
                     }
-                    com.student.amizoneplus.ui.kit.Caps("TARGET", P.faint, Modifier.padding(top = 18.dp, bottom = 8.dp))
-                    com.student.amizoneplus.ui.kit.TargetPicker(t, { v -> haptics.select(); updateSettings { it.copy(threshold = v) } })
-                    if (plan != null) Row(Modifier.padding(top = 18.dp)) {
-                        if (plan.extraHeld > 0) Stat("Extra held", plan.extraHeld.toDouble(), null, Modifier.weight(1f))
-                        else Stat("Left", plan.remaining.toDouble(), null, Modifier.weight(1f))
-                        Stat(if (plan.reachable) "Must attend" else "Extra needed", (if (plan.reachable) plan.need else plan.extraNeeded).toDouble(),
-                            if (plan.reachable) null else P.bad, Modifier.weight(1f))
-                        Stat("Can miss", plan.canMiss.toDouble(), if (plan.canMiss > 0) P.good else P.warn, Modifier.weight(1f))
-                    }
-                    Box(Modifier.padding(top = 16.dp)) { Chip(statusText(c.attended, c.held, t, credits), Tone.Ink) }
+                    Stepper(credits ?: 0.0, ::setCredits)
                 }
-                if (plan != null && !plan.reachable) ExtraClassesCard(c.attended, c.held, credits, t, plan)
-                Card {
-                    T("BY WEEKDAY", Type.title)
-                    val weekly = weekdayRates(s.data?.history.orEmpty(), c.code)
-                    T(if (weekly.any { it != null }) "Last 4 weeks" else "No marked classes in the last 4 weeks", Type.caption, sub = true, modifier = Modifier.padding(top = 4.dp, bottom = 14.dp))
-                    WeekBars(weekly, bar = P.coral)
+                if (plan != null) Row(Modifier.padding(top = 16.dp)) {
+                    if (plan.extraHeld > 0) Stat("Extra held", plan.extraHeld.toDouble(), null, Modifier.weight(1f))
+                    else Stat("Left", plan.remaining.toDouble(), null, Modifier.weight(1f))
+                    Stat(if (plan.reachable) "Must attend" else "Extra needed", (if (plan.reachable) plan.need else plan.extraNeeded).toDouble(),
+                        if (plan.reachable) null else P.bad, Modifier.weight(1f))
+                    Stat("Can miss", plan.canMiss.toDouble(), if (plan.canMiss > 0) P.good else P.warn, Modifier.weight(1f))
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Btn("Material", BtnKind.Lav, Icons.Outlined.FolderOpen, openLms)
-                    Btn("Syllabus", BtnKind.Ghost, Icons.Outlined.Description, c.syllabusUrl?.let { u -> { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) } })
-                }
+            }
+            if (plan != null && !plan.reachable) Box(Modifier.padding(top = 12.dp)) { ExtraClassesCard(c.attended, c.held, credits, t, plan) }
+            Column(Modifier.padding(top = 12.dp).fillMaxWidth().background(P.cardRaised, SquircleShape(22.dp)).padding(16.dp)) {
+                T("BY WEEKDAY", Type.title)
+                val weekly = weekdayRates(s.data?.history.orEmpty(), c.code)
+                T(if (weekly.any { it != null }) "Last 4 weeks" else "No marked classes in the last 4 weeks", Type.caption, sub = true, modifier = Modifier.padding(top = 4.dp, bottom = 14.dp))
+                WeekBars(weekly, bar = P.coral)
+            }
+            Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Btn("Material", BtnKind.Lav, Icons.Outlined.FolderOpen, openLms)
+                Btn("Syllabus", BtnKind.Ghost, Icons.Outlined.Description, c.syllabusUrl?.let { u -> { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) } })
             }
         }
     }
