@@ -74,6 +74,7 @@ object P {
     val sage = Color(0xFFC6D4CB)
     val coral = Color(0xFFF06A55)
     val coralSoft = Color(0xFFF89A86)
+    val coralDeep = Color(0xFFD4604E) // Subjects: coral, a little deeper so it isn't harsh
     val peri = Color(0xFF6F73F4)
     val periSoft = Color(0xFF8C90F7)
     val sky = Color(0xFFBDE9F4)

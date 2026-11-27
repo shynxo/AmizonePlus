@@ -363,6 +363,8 @@ val TABS = listOf(
 fun BottomNav(
     route: Route, onChange: (Route) -> Unit, hazeState: HazeState, modifier: Modifier = Modifier,
     blurAlpha: () -> Float = { 1f }, onBack: (() -> Unit)? = null,
+    /** A bar shown just above the nav (e.g. the attendance target on Subjects), outside the blur. */
+    accessory: (@Composable () -> Unit)? = null,
 ) {
     val haptics = LocalHaptics.current
     val pets = com.student.amizoneplus.ui.pets.LocalPetWorld.current
@@ -419,6 +421,15 @@ fun BottomNav(
                 )
                 .background(Brush.verticalGradient(listOf(Color.Transparent, P.bg.copy(alpha = 0.5f)))),
         )
+        // The accessory bar rides on top of the nav, the same width, sliding up into place.
+        var lastAccessory by remember { androidx.compose.runtime.mutableStateOf(accessory) }
+        if (accessory != null) lastAccessory = accessory
+        androidx.compose.animation.AnimatedVisibility(
+            visible = accessory != null && !isBack,
+            modifier = Modifier.padding(bottom = maxOf(gap, navBottom) + L.nav + 8.dp).width(pillW),
+            enter = androidx.compose.animation.fadeIn(tween(200)) + androidx.compose.animation.slideInVertically(androidx.compose.animation.core.spring(0.8f, 420f)) { it / 2 },
+            exit = androidx.compose.animation.fadeOut(tween(120)) + androidx.compose.animation.slideOutVertically(tween(160)) { it / 2 },
+        ) { lastAccessory?.invoke() }
         Box(
             Modifier.padding(bottom = maxOf(gap, navBottom)).size(navW, L.nav)
                 .onGloballyPositioned { pets?.navTop = it.boundsInWindow().top }
