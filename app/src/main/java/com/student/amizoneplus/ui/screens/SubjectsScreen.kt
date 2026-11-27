@@ -277,8 +277,9 @@ private fun AttendanceTile(c: Course, threshold: Int, index: Int, animate: Boole
         kotlinx.coroutines.delay(70L * index)
         grow.animateTo(1f, tween(700, easing = Motion.emphasized))
     }
-    val ink = if (low) Color.White else P.onHero
-    val bg = if (low) P.onHero else Color.White.copy(alpha = 0.22f)
+    // Cream tiles on the coral header (calmer than coral-on-coral); below-target ones go dark.
+    val ink = if (low) Color.White else P.onCream
+    val bg = if (low) P.onHero else P.cream
     val name = com.student.amizoneplus.logic.shortCourseName(c.name, 12).replace("OOPS", "OOPs")
     val note = when {
         c.held == 0 -> "no classes yet"
@@ -304,7 +305,7 @@ private fun AttendanceTile(c: Course, threshold: Int, index: Int, animate: Boole
                 if (w > 0f) drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(0f, 0f, w.coerceAtLeast(h), h)), ink)
                 // Target notch, sticking out a little above and below the bar.
                 val tx = size.width * threshold / 100f
-                drawLine(if (low) Color.White.copy(alpha = 0.6f) else P.onHero.copy(alpha = 0.5f),
+                drawLine(if (low) Color.White.copy(alpha = 0.6f) else P.onCream.copy(alpha = 0.45f),
                     Offset(tx, -3.dp.toPx()), Offset(tx, h + 3.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
             },
         )

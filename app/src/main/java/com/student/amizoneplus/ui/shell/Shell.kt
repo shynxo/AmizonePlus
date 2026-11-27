@@ -429,13 +429,13 @@ fun BottomNav(
                         }
                     },
                 )
-                .background(P.nav.copy(alpha = 0.92f), SquircleShape(L.nav / 2)).padding(pad),
+                .background(P.nav.copy(alpha = 0.92f), androidx.compose.foundation.shape.RoundedCornerShape(50)).padding(pad), // nav stays a true pill
             contentAlignment = Alignment.Center,
         ) {
             // Tabs: the tile + icons, fading out as the pill shrinks into the back button.
             if (tabsAlpha > 0.01f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = tabsAlpha }) {
                 Box(Modifier.offset { androidx.compose.ui.unit.IntOffset(((if (dragging) dragX else tile.value) + 3.dp.toPx()).roundToInt(), 0) }
-                    .size(slot - 6.dp, L.nav - pad * 2).background(P.sky, SquircleShape((L.nav - pad * 2) / 2)))
+                    .size(slot - 6.dp, L.nav - pad * 2).background(P.sky, androidx.compose.foundation.shape.RoundedCornerShape(50)))
                 Row(Modifier.fillMaxSize()) {
                     TABS.forEachIndexed { i, (r, icon) ->
                         val tint by animateColorAsState(if (i == shown) P.onHero else Color(0xFFDCDCE0), label = "navtint")
@@ -451,7 +451,7 @@ fun BottomNav(
             // Back arrow, fading in as the pill becomes a square.
             if (backAlpha > 0.01f) Box(
                 Modifier.fillMaxSize().graphicsLayer { alpha = backAlpha; val s = 0.7f + 0.3f * backAlpha; scaleX = s; scaleY = s }
-                    .background(P.sky, SquircleShape((L.nav - pad * 2) / 2)),
+                    .background(P.sky, androidx.compose.foundation.shape.RoundedCornerShape(50)),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = P.onHero, modifier = Modifier.size(22.dp)) }
         }
