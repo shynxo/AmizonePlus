@@ -376,10 +376,10 @@ private fun AttendanceTile(
 
 /** What the toast says when you let go of a bar you've been "fixing". */
 private val WISHES = listOf(
-    "Wish it was this easy, mate 😉",
+    "Wish it was this easy, mate",
     "Nice try. Amizone didn't see that.",
     "If only attendance worked like this…",
-    "Dragging it won't mark you present 😄",
+    "Dragging it won't mark you present",
 )
 
 /** …and for subjects that haven't even had a class yet. */
@@ -387,7 +387,7 @@ private val NO_CLASS_WISHES = listOf(
     "BRUH 💀 there aren't even classes yet",
     "why you wanna be present in that shit 💀",
     "Attendance for a class that doesn't exist? Bold.",
-    "Bro's attending ghost lectures 👻",
+    "Bro's attending ghost lectures",
 )
 
 @OptIn(ExperimentalSharedTransitionApi::class)
