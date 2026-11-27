@@ -298,9 +298,10 @@ private fun AttendanceTile(c: Course, threshold: Int, index: Int, animate: Boole
         Box(
             Modifier.padding(top = 8.dp).fillMaxWidth().height(8.dp).drawBehind {
                 val h = size.height
-                drawRoundRect(ink.copy(alpha = 0.16f), cornerRadius = CornerRadius(h / 2))
+                // Squircle-pill track and fill (softer ends than a semicircle).
+                drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, h)), ink.copy(alpha = 0.16f))
                 val w = size.width * (pct / 100f) * grow.value
-                if (w > 0f) drawRoundRect(ink, size = Size(w.coerceAtLeast(h), h), cornerRadius = CornerRadius(h / 2))
+                if (w > 0f) drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(0f, 0f, w.coerceAtLeast(h), h)), ink)
                 // Target notch, sticking out a little above and below the bar.
                 val tx = size.width * threshold / 100f
                 drawLine(if (low) Color.White.copy(alpha = 0.6f) else P.onHero.copy(alpha = 0.5f),

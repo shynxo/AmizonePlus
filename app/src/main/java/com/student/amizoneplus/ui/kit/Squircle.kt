@@ -88,3 +88,23 @@ class SquirclePxShape(private val tl: Float, private val tr: Float, private val 
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
         Outline.Generic(squirclePath(Rect(0f, 0f, size.width, size.height), tl, tr, br, bl))
 }
+
+/**
+ * A squircle pill: ends made of two squircle curves that meet in the middle, so they're
+ * softer and slightly flatter than a semicircle (the look of the search and Amizone ID bars).
+ */
+fun squirclePillPath(rect: Rect): Path {
+    val half = min(rect.width, rect.height) / 2f
+    val path = Path()
+    if (half <= 0f) return path
+    val l = rect.left; val t = rect.top; val r = rect.right; val b = rect.bottom
+    path.moveTo(l, t + half)
+    path.cubicTo(l, t + half * PULL, l + half * PULL, t, l + half, t)
+    path.lineTo(r - half, t)
+    path.cubicTo(r - half * PULL, t, r, t + half * PULL, r, t + half)
+    path.cubicTo(r, b - half * PULL, r - half * PULL, b, r - half, b)
+    path.lineTo(l + half, b)
+    path.cubicTo(l + half * PULL, b, l, b - half * PULL, l, t + half)
+    path.close()
+    return path
+}
