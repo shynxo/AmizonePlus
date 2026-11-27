@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -82,7 +84,10 @@ fun LoginScreen(vm: AppViewModel, ctxError: String?) {
     )
 
     Column(
-        Modifier.fillMaxSize().background(P.canvas).statusBarsPadding().imePadding().padding(horizontal = 24.dp),
+        // Scrolls, so the password box and Sign in button stay reachable above the keyboard
+        // on small screens; clears the system nav buttons at the bottom.
+        Modifier.fillMaxSize().background(P.canvas).statusBarsPadding().navigationBarsPadding().imePadding()
+            .verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
         Box(Modifier.size(64.dp).background(P.sun, RoundedCornerShape(20.dp)), contentAlignment = Alignment.Center) {

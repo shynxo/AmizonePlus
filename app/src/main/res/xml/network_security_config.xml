@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Amizone's certificate chains up to "GlobalSign Root R46" (2019), which Android only
+  trusts from Android 10/11 on. Older phones (Android 8 / 9) reject it as untrusted and the
+  app can't connect at all. So for amizone.net only, the app also trusts that one root,
+  shipped in res/raw (SHA-256 4F:A3:12:6D:...:3C:40:C9). Everything else uses the phone's
+  normal trust store.
+-->
+<network-security-config>
+    <domain-config>
+        <domain includeSubdomains="true">amizone.net</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/globalsign_root_r46" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

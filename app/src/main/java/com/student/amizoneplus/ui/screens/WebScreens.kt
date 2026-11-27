@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -177,6 +178,7 @@ fun AuthedWebPage(url: String, title: String, relogin: suspend () -> Boolean, on
                         webChromeClient = object : WebChromeClient() {
                             override fun onProgressChanged(view: WebView, newProgress: Int) { progress = newProgress }
                         }
+                        if (android.os.Build.VERSION.SDK_INT <= 28) setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null) // old WebView GPU bugs
                         val self = this
                         setDownloadListener { dUrl, _, disp, mime, _ ->
                             val name = URLUtil.guessFileName(dUrl, disp, mime)
@@ -187,6 +189,8 @@ fun AuthedWebPage(url: String, title: String, relogin: suspend () -> Boolean, on
                             }
                         }
                         webViewClient = object : WebViewClient() {
+                            override fun onReceivedSslError(view: WebView, h: android.webkit.SslErrorHandler, e: android.net.http.SslError) =
+                                com.student.amizoneplus.data.AmizoneSsl.handle(h, e) // older phones lack Amizone's root
                             override fun onPageStarted(view: WebView, u: String?, favicon: Bitmap?) {
                                 u?.let { host = runCatching { android.net.Uri.parse(it).host.orEmpty() }.getOrDefault(host) }
                             }
@@ -241,14 +245,14 @@ fun AuthedWebPage(url: String, title: String, relogin: suspend () -> Boolean, on
 fun WebLoginSheet(username: String?, password: String?, onDone: () -> Unit, onClose: () -> Unit) {
     var done by remember { mutableStateOf(false) }
     BackHandler(onBack = onClose)
-    Column(Modifier.fillMaxSize().background(P.canvas).statusBarsPadding().padding(top = L.page)) {
+    Column(Modifier.fillMaxSize().background(P.canvas).statusBarsPadding().navigationBarsPadding().padding(top = L.page)) {
         SheetHeader("Sign in to Amizone", onClose)
         // Amizone's human check (Cloudflare) needs a reasonably recent web engine. Older
         // phones (Android 8 / 9) often still have the WebView they shipped with: offer the update.
         val ctx = androidx.compose.ui.platform.LocalContext.current
         val wv = remember { runCatching { WebView.getCurrentWebViewPackage() }.getOrNull() }
         val major = wv?.versionName?.substringBefore('.')?.toIntOrNull() ?: 0
-        if (major in 1..99) {
+        if (major in 1..89) { // Amizone's login script needs Chrome 80+ (it uses newer JavaScript)
             Box(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp).fillMaxWidth()
                 .background(P.sun, androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
                 .press({
@@ -257,7 +261,7 @@ fun WebLoginSheet(username: String?, password: String?, onDone: () -> Unit, onCl
                         .onFailure { runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://play.google.com/store/apps/details?id=$pkg"))) } }
                 })
                 .padding(16.dp)) {
-                T("This phone's web engine is old (version $major), so Amizone's check box may not work. Tap to update \"Android System WebView\" in the Play Store, then try again.",
+                T("This phone's web engine (version $major) is too old for Amizone's check box, so it won't appear. Tap here to update \"Android System WebView\" in the Play Store (it's free), then open this again.",
                     Type.caption, color = P.onHero)
             }
         }
@@ -269,9 +273,29 @@ fun WebLoginSheet(username: String?, password: String?, onDone: () -> Unit, onCl
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.userAgentString = Http.UA
+                    // Old WebViews (Android 9 and below) can fail to set up GPU drawing and leave the
+                    // whole screen blank; software drawing is slower but always works for a login page.
+                    if (android.os.Build.VERSION.SDK_INT <= 28) setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
                     CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                    // Diagnostics (logcat tag AmzWeb): what the sign-in page loads and any errors.
+                    webChromeClient = object : android.webkit.WebChromeClient() {
+                        override fun onConsoleMessage(m: android.webkit.ConsoleMessage): Boolean {
+                            android.util.Log.w("AmzWeb", "console ${m.messageLevel()}: ${m.message()} @${m.sourceId()}:${m.lineNumber()}"); return true
+                        }
+                    }
                     webViewClient = object : WebViewClient() {
+                        override fun onReceivedError(view: WebView, req: android.webkit.WebResourceRequest, err: android.webkit.WebResourceError) {
+                            android.util.Log.w("AmzWeb", "error ${err.errorCode} ${err.description} ${req.url}")
+                        }
+                        override fun onReceivedHttpError(view: WebView, req: android.webkit.WebResourceRequest, res: android.webkit.WebResourceResponse) {
+                            android.util.Log.w("AmzWeb", "http ${res.statusCode} ${req.url}")
+                        }
+                        override fun onReceivedSslError(view: WebView, h: android.webkit.SslErrorHandler, e: android.net.http.SslError) {
+                            android.util.Log.w("AmzWeb", "ssl ${e.primaryError} ${e.url}")
+                            com.student.amizoneplus.data.AmizoneSsl.handle(h, e) // older phones lack Amizone's root
+                        }
                         override fun onPageFinished(view: WebView, u: String?) {
+                            android.util.Log.w("AmzWeb", "finished $u")
                             val path = runCatching { android.net.Uri.parse(u).path.orEmpty() }.getOrDefault("")
                             if (!done && u?.startsWith(AmizoneClient.BASE) == true && path.isNotEmpty() && path != "/" && !path.contains("login", true)) {
                                 done = true

@@ -71,6 +71,8 @@ compileSdk/targetSdk 37 · minSdk 26 (Android 8+). Gradle JDK = Android Studio's
 |---|---|
 | `Models.kt` | All data classes (attendance, classes, exams, courses, results, LMS items, settings) and error types |
 | `Http.kt` | OkHttp client whose cookie jar **is Android's WebView CookieManager** — so in-app web pages are always signed in too; also shares the WebView's User-Agent (Cloudflare ties sessions to it) |
+| `AmizoneSsl.kt` | Lets in-app web pages open Amizone on Android 8/9, whose trust store lacks Amizone's GlobalSign Root R46 (the root itself is in `res/raw`, trusted via `res/xml/network_security_config.xml`) |
+| `SessionLog.kt` | Diagnostic journal of the Amizone session (cookie names + fingerprints only) in the app's external files folder |
 | `Downloads.kt` | Downloads a file with the signed-in connection and opens it in the phone's viewer app (PDF, PPT, Word…) |
 | `Updater.kt` | In-app updates: reads the latest GitHub Release, downloads the APK, hands it to Android's installer (see RELEASING.md) |
 | `Parsers.kt` | Jsoup parsers for every Amizone page (attendance, timetable JSON, courses, exams, ID card, results, documents, credits) |
