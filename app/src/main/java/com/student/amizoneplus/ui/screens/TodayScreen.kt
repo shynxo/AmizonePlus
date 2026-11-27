@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.screens
 
+import com.student.amizoneplus.ui.kit.SquircleShape
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import com.student.amizoneplus.ui.pets.perch
@@ -149,8 +150,8 @@ fun TodayScreen(
         Rise(i++) {
             Card(onClick = { go(if (upcoming != null || nextExam != null) Route.Schedule else Route.Subjects) }) {
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Box(Modifier.size(60.dp).background(if (low.isNotEmpty() && upcoming == null) P.coral else P.sun, RoundedCornerShape(20.dp)), contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(30.dp).background(P.onHero, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(60.dp).background(if (low.isNotEmpty() && upcoming == null) P.coral else P.sun, SquircleShape(20.dp)), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(30.dp).background(P.onHero, SquircleShape(10.dp)), contentAlignment = Alignment.Center) {
                             Icon(when { upcoming != null -> Icons.AutoMirrored.Outlined.EventNote; nextExam != null -> Icons.Outlined.Event; low.isNotEmpty() -> Icons.Outlined.PriorityHigh; else -> Icons.Outlined.TaskAlt },
                                 null, tint = P.sun, modifier = Modifier.size(18.dp))
                         }
@@ -197,7 +198,7 @@ fun TodayScreen(
 
         // Periwinkle attendance card (reference "Venue Capacity")
         Rise(i++) {
-            Column(Modifier.fillMaxWidth().perch().background(P.peri, RoundedCornerShape(30.dp)).padding(20.dp).animateContentSize(tween(Motion.MORPH_MS, easing = Motion.emphasized))) {
+            Column(Modifier.fillMaxWidth().perch().background(P.peri, SquircleShape(30.dp)).padding(20.dp).animateContentSize(tween(Motion.MORPH_MS, easing = Motion.emphasized))) {
                 Row(verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f)) {
                         T("ATTENDANCE", Type.display.copy(fontSize = 38f.sp(), lineHeight = 38f.sp()), color = P.onHero, maxLines = 1)

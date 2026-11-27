@@ -145,18 +145,24 @@ object Motion {
     const val STAGGER_MS = 30L
 }
 
-/* ── Type: Barlow Condensed for display, DM Mono for everything else ── */
+/* ── Type: Barlow Condensed for display, DM Sans for everything else ── */
 
 val Condensed = FontFamily(
     Font(R.font.barlow_condensed_medium, FontWeight.Medium),
     Font(R.font.barlow_condensed_semibold, FontWeight.SemiBold),
     Font(R.font.barlow_condensed_bold, FontWeight.Bold),
 )
-val Mono = FontFamily(
-    Font(R.font.dm_mono_light, FontWeight.Light),
-    Font(R.font.dm_mono_regular, FontWeight.Normal),
-    Font(R.font.dm_mono_medium, FontWeight.Medium),
+
+/** DM Sans (variable font): soft, round, easy-reading body text. One file, every weight. */
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+private fun dmSans(w: FontWeight) = Font(
+    R.font.dm_sans, w,
+    variationSettings = androidx.compose.ui.text.font.FontVariation.Settings(
+        androidx.compose.ui.text.font.FontVariation.weight(w.weight),
+        androidx.compose.ui.text.font.FontVariation.Setting("opsz", 14f),
+    ),
 )
+val Sans = FontFamily(dmSans(FontWeight.Light), dmSans(FontWeight.Normal), dmSans(FontWeight.Medium), dmSans(FontWeight.SemiBold))
 
 object Type {
     // Condensed, uppercase by convention (callers pass .uppercase()).
@@ -166,11 +172,11 @@ object Type {
     val title = TextStyle(fontFamily = Condensed, fontWeight = FontWeight.SemiBold, fontSize = 26.sp, lineHeight = 28.sp)
     val num = TextStyle(fontFamily = Condensed, fontWeight = FontWeight.Bold, fontSize = 52.sp, lineHeight = 52.sp, letterSpacing = (-0.5).sp)
     val numSm = TextStyle(fontFamily = Condensed, fontWeight = FontWeight.SemiBold, fontSize = 30.sp, lineHeight = 30.sp)
-    // Mono
-    val label = TextStyle(fontFamily = Mono, fontWeight = FontWeight.Medium, fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = 0.2.sp)
-    val body = TextStyle(fontFamily = Mono, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 21.sp, letterSpacing = 0.2.sp)
-    val caption = TextStyle(fontFamily = Mono, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.3.sp)
-    val caps = TextStyle(fontFamily = Mono, fontWeight = FontWeight.Medium, fontSize = 12.sp, letterSpacing = 0.6.sp)
+    // Sans. Digits are tabular ("tnum"), so times and counts don't jiggle as they change.
+    val label = TextStyle(fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = 0.sp, fontFeatureSettings = "tnum")
+    val body = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 22.sp, letterSpacing = 0.sp, fontFeatureSettings = "tnum")
+    val caption = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Normal, fontSize = 13.sp, lineHeight = 17.sp, letterSpacing = 0.1.sp, fontFeatureSettings = "tnum")
+    val caps = TextStyle(fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 0.8.sp, fontFeatureSettings = "tnum")
 }
 
 fun attendanceTone(pct: Double, threshold: Int, onInk: Boolean = true): Color = when {

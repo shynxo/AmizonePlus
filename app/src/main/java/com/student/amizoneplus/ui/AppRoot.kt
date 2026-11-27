@@ -116,6 +116,8 @@ private fun Main(vm: AppViewModel, s: UiState) {
     val m = remember { Animatable(0f) }
     // The screen's ease-back and the blur run on their own smooth curve (the rows' timer is linear).
     val z = remember { Animatable(0f) }
+    // The menu blurs everything below it: screens, status bar and nav.
+    val menuHaze = rememberHazeState()
     // Where the menu button that opened the menu sits (the close button lands exactly there).
     var menuAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     // Backdrop (blur + slight ease-back of the screen) on one soft, no-overshoot spring;
@@ -208,7 +210,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
     ) {
         Box(Modifier.fillMaxSize()) {
           // Everything here (screens + status bar + nav) is what the quick menu blurs.
-          Box(Modifier.fillMaxSize()) {
+          Box(Modifier.fillMaxSize().hazeSource(menuHaze)) {
             // Everything under the nav is a blur source for the nav's progressive blur.
             Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
                 // Swipe left / right on any free space to move between tabs. Rows that scroll
@@ -281,7 +283,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
             // Pets roam above the screens and the nav (so they can be carried onto a tab).
             com.student.amizoneplus.ui.pets.PetLayer(pets, s.settings.pets, active = !menuMounted && web == null && !gallery && s.celebrate == null)
 
-            if (menuMounted) QuickMenuOverlay(menuOpen, { z.value }, menuAnchor, { closeMenu() }) { path, title ->
+            if (menuMounted) QuickMenuOverlay(menuOpen, { z.value }, menuAnchor, menuHaze, { closeMenu() }) { path, title ->
                 // Sections the app already shows natively open in the app's own UI.
                 when (path.lowercase()) {
                     "/examination/examschedule" -> { scheduleFocus = "exams"; go(Route.Schedule) }

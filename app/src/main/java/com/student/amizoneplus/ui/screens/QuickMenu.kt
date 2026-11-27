@@ -69,6 +69,9 @@ import com.student.amizoneplus.ui.theme.LocalHaptics
 import com.student.amizoneplus.ui.theme.P
 import com.student.amizoneplus.ui.theme.Type
 import kotlinx.coroutines.launch
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 import kotlin.math.roundToInt
 
 data class MenuItem(val label: String, val path: String, val icon: ImageVector)
@@ -133,10 +136,9 @@ const val MENU_CLOSE_MS = 340
 /**
  * The quick menu.
  *
- * A solid panel grows out of the menu button you tapped, a circle expanding from its centre,
- * and covers the top of the screen down to just past the last option. The rest of the page stays
- * visible under a light dim, and tapping it closes the menu. The button itself stays exactly where
- * it was, its grid of dots folding into a cross.
+ * The live app blurs behind it (full strength down to just past the last option, then fading
+ * out), the options drop in one after another on a bouncy spring, and the button stays exactly
+ * where it was, its grid of dots folding into a cross. Tap outside the options to close.
  *
  * The options are one connected list. Opening a section splits the list around it: gaps open
  * above and below, the section becomes its own rounded card, its pages un-blur into view and
@@ -147,6 +149,7 @@ fun QuickMenuOverlay(
     open: Boolean,
     progress: () -> Float,
     anchor: Rect?,
+    hazeState: dev.chrisbanes.haze.HazeState,
     onClose: () -> Unit,
     openPage: (String, String) -> Unit,
 ) {
@@ -166,43 +169,64 @@ fun QuickMenuOverlay(
     val sel = remember { List(MENU_GROUPS.size) { Animatable(0f) } }
     LaunchedEffect(openGroup) {
         sel.forEachIndexed { i, a ->
-            launch { a.animateTo(if (i == openGroup) 1f else 0f, spring(dampingRatio = 0.86f, stiffness = 300f)) }
+            launch { a.animateTo(if (i == openGroup) 1f else 0f, spring(dampingRatio = 0.62f, stiffness = 380f)) }
         }
     }
     val scroll = rememberScrollState()
 
+    // Rows drop in one after another on a bouncy spring (skiper-style) and fold away quickly.
+    val rowIn = remember { List(MENU_GROUPS.size) { Animatable(0f) } }
+    LaunchedEffect(open) {
+        rowIn.forEachIndexed { i, a ->
+            launch {
+                if (open) {
+                    kotlinx.coroutines.delay(40L + i * 35L)
+                    a.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 420f))
+                } else {
+                    kotlinx.coroutines.delay((rowIn.size - 1 - i) * 18L)
+                    a.animateTo(0f, spring(dampingRatio = 1f, stiffness = 900f))
+                }
+            }
+        }
+    }
+    val fadeLen = with(density) { 150.dp.toPx() }
+
     Box(
         Modifier.fillMaxSize()
             .onSizeChanged { screen = androidx.compose.ui.geometry.Size(it.width.toFloat(), it.height.toFloat()) }
-            // The page below the panel: a light dim; tap it to close.
-            .drawBehind { drawRect(Color.Black, alpha = (if (P.cur.dark) 0.45f else 0.22f) * progress().coerceIn(0f, 1f)) }
             .clickable(remember { MutableInteractionSource() }, indication = null) { onClose() },
     ) {
-        // ── The panel: a circle growing from the button, clipped to the panel's rounded shape ──
-        val radius = with(density) { 30.dp.toPx() }
+        // ── The live app behind, blurred down to just past the last option, then fading out ──
         Box(
             Modifier.fillMaxSize()
-                .drawWithContent {
-                    val p = progress().coerceIn(0f, 1.2f)
-                    val bottom = (listBottom + 22.dp.toPx()).coerceIn(btn.bottom + 40.dp.toPx(), size.height)
-                    val c = btn.center
-                    val far = listOf(Offset(0f, 0f), Offset(size.width, 0f), Offset(0f, bottom), Offset(size.width, bottom))
-                        .maxOf { (it - c).getDistance() }
-                    val r = btn.width / 2 + (far - btn.width / 2) * p
-                    val circle = Path().apply { addOval(Rect(c, r)) }
-                    val panel = Path().apply {
-                        addRoundRect(RoundRect(0f, -radius, size.width, bottom, CornerRadius(radius)))
-                    }
-                    val shape = Path().apply { op(circle, panel, PathOperation.Intersect) }
-                    // Button-coloured only while it's still about button-sized, so it reads as the
-                    // button swelling open (and shrinking back into it), never as a big pale disc.
-                    val tint = lerp(P.cream, P.sheet, ((r - btn.width / 2) / (btn.width * 0.6f)).coerceIn(0f, 1f))
-                    clipPath(shape) {
-                        drawRect(tint)
-                        this@drawWithContent.drawContent()
-                    }
-                }
-                // Swallow taps on the panel itself (only the dim outside closes it); swipe up to close.
+                .graphicsLayer { alpha = progress().coerceIn(0f, 1f) }
+                .hazeBlur(
+                    dev.chrisbanes.haze.HazeInput.Backdrop(hazeState),
+                    HazeBlurStyle {
+                        blurRadius(24.dp)
+                        // A black tint (not the page colour) so the blur reads deep, not milky.
+                        colorEffects(listOf(HazeColorEffect.tint(Color.Black.copy(alpha = if (P.cur.dark) 0.32f else 0.14f))))
+                        val edge = blurEdge(btn, listBottom, progress())
+                        progressive(dev.chrisbanes.haze.HazeProgressive.verticalGradient(
+                            startY = edge, startIntensity = 1f, endY = edge + fadeLen, endIntensity = 0f,
+                        ))
+                    },
+                )
+                .drawBehind {
+                    // A black gradient that follows the blur: darkest at the top, easing off to its edge.
+                    val edge = blurEdge(btn, listBottom, progress())
+                    val k = if (P.cur.dark) 1f else 0.45f
+                    drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.62f * k),
+                        (edge / size.height).coerceIn(0f, 1f) to Color.Black.copy(alpha = 0.38f * k),
+                        ((edge + fadeLen) / size.height).coerceIn(0f, 1f) to Color.Transparent,
+                    ))
+                },
+        )
+
+        Box(
+            Modifier.fillMaxSize()
+                // Swipe up anywhere on the menu to close.
                 .pointerInput(Unit) {
                     var total = 0f
                     detectVerticalDragGestures(onDragStart = { total = 0f }, onDragEnd = { if (total < -48.dp.toPx()) onClose() }) { _, dy -> total += dy }
@@ -212,7 +236,11 @@ fun QuickMenuOverlay(
             val titleTop = with(density) { btn.center.y.toDp() } - 16.dp
             T("AMIZONE+", Type.headline, modifier = Modifier
                 .padding(start = L.page, top = titleTop.coerceAtLeast(0.dp))
-                .graphicsLayer { alpha = ((progress() - 0.25f) / 0.4f).coerceIn(0f, 1f) })
+                .graphicsLayer {
+                    val a = progress().coerceIn(0f, 1f)
+                    alpha = ((a - 0.2f) / 0.4f).coerceIn(0f, 1f)
+                    translationX = -12.dp.toPx() * (1f - a)
+                })
 
             val listTop = with(density) { btn.bottom.toDp() } + 18.dp
             Column(
@@ -234,9 +262,9 @@ fun QuickMenuOverlay(
                             group = g,
                             index = i,
                             sel = { sel[i].value },
-                            splitAbove = { if (prev == null) 1f else maxOf(sel[i].value, prev.value) },
-                            splitBelow = { if (next == null) 1f else maxOf(sel[i].value, next.value) },
-                            appear = { ((progress() - 0.18f - 0.045f * i) / 0.42f).coerceIn(0f, 1f) },
+                            splitAbove = { if (prev == null) 1f else maxOf(sel[i].value, prev.value).coerceAtLeast(0f) },
+                            splitBelow = { if (next == null) 1f else maxOf(sel[i].value, next.value).coerceAtLeast(0f) },
+                            appear = { rowIn[i].value },
                             onToggle = {
                                 if (openGroup == i) { haptics.collapse(); openGroup = null } else { haptics.expand(); openGroup = i }
                             },
@@ -261,6 +289,12 @@ fun QuickMenuOverlay(
             }
         }
     }
+}
+
+/** Where the blur's full-strength part ends: grows from the button down to just past the last option. */
+private fun blurEdge(btn: Rect, listBottom: Float, p: Float): Float {
+    val rest = if (listBottom > 0f) listBottom + 12f else btn.bottom
+    return btn.bottom + (rest - btn.bottom) * p.coerceIn(0f, 1f)
 }
 
 /** One section of the list, plus its pages when open. */
@@ -288,18 +322,16 @@ private fun MenuRow(
             }
             .graphicsLayer {
                 val a = appear()
-                alpha = a
-                translationY = 10.dp.toPx() * (1f - a)
+                alpha = a.coerceIn(0f, 1f)
+                translationY = -18.dp.toPx() * (1f - a)   // drops in from above, overshoots, settles
+                val sc = 0.94f + 0.06f * a
+                scaleX = sc; scaleY = sc
             }
             .drawBehind {
                 val k = sel()
                 val tr = r.toPx() * (if (index == 0) 1f else splitAbove())
                 val br = r.toPx() * (if (index == MENU_GROUPS.lastIndex) 1f else splitBelow())
-                drawPath(Path().apply {
-                    addRoundRect(RoundRect(Rect(0f, 0f, size.width, size.height),
-                        topLeft = CornerRadius(tr), topRight = CornerRadius(tr),
-                        bottomRight = CornerRadius(br), bottomLeft = CornerRadius(br)))
-                }, lerp(P.bg, P.card, k))
+                drawPath(com.student.amizoneplus.ui.kit.squirclePath(Rect(0f, 0f, size.width, size.height), tr, tr, br, br), lerp(P.card, P.cardRaised, k.coerceIn(0f, 1f)))
             },
     ) {
         Column {
@@ -323,7 +355,7 @@ private fun MenuRow(
                         val k = sel()
                         if (k <= 0.001f) return@layout layout(c.minWidth, 0) {}
                         val p = m.measure(c)
-                        layout(p.width, (p.height * k.coerceAtMost(1f)).roundToInt()) { p.place(0, 0) }
+                        layout(p.width, (p.height * k).roundToInt().coerceAtLeast(0)) { p.place(0, 0) }
                     }
                     .clipToBounds()
                     .graphicsLayer {

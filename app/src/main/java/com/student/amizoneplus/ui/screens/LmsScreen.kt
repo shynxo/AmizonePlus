@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.screens
 
+import com.student.amizoneplus.ui.kit.SquircleShape
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -230,7 +231,7 @@ fun LmsScreen(vm: AppViewModel, s: UiState, focusCode: String?, onFocusHandled: 
                 }
             },
         ) {
-            error?.let { Box(Modifier.fillMaxWidth().background(P.badSoft, RoundedCornerShape(22.dp)).padding(16.dp)) { T(it, Type.caption) } }
+            error?.let { Box(Modifier.fillMaxWidth().background(P.badSoft, SquircleShape(22.dp)).padding(16.dp)) { T(it, Type.caption) } }
             if (current != null) {
                 val c = content
                 if (c == null) Spinner()

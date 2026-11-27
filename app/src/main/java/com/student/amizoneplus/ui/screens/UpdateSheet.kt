@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.screens
 
+import com.student.amizoneplus.ui.kit.SquircleShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -112,7 +113,7 @@ fun UpdateSheet(rel: Updater.Release, onLater: () -> Unit) {
             Modifier.fillMaxWidth()
                 .graphicsLayer { translationY = (1f - enter.value) * 220.dp.toPx() }
                 .clickable(remember { MutableInteractionSource() }, indication = null) {}
-                .background(P.card, RoundedCornerShape(topStart = L.sheetRadius, topEnd = L.sheetRadius))
+                .background(P.card, SquircleShape(topStart = L.sheetRadius, topEnd = L.sheetRadius))
                 .navigationBarsPadding()
                 .padding(horizontal = L.pad, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -122,15 +123,15 @@ fun UpdateSheet(rel: Updater.Release, onLater: () -> Unit) {
             T("You're on v${Updater.current}" + (if (rel.sizeBytes > 0) " · %.1f MB".format(rel.sizeBytes / 1_048_576f) else ""), Type.caption, sub = true)
             if (rel.notes.isNotBlank()) Column(
                 Modifier.fillMaxWidth().heightIn(max = 220.dp).padding(top = 6.dp)
-                    .background(P.cardRaised, RoundedCornerShape(20.dp)).verticalScroll(rememberScrollState()).padding(16.dp),
+                    .background(P.cardRaised, SquircleShape(20.dp)).verticalScroll(rememberScrollState()).padding(16.dp),
             ) {
                 Caps("WHAT'S NEW", P.faint, Modifier.padding(bottom = 8.dp))
                 T(rel.notes.replace("\r", ""), Type.body)
             }
             // download progress
             Box(Modifier.fillMaxWidth().padding(top = 6.dp).height(6.dp).graphicsLayer { alpha = shown }
-                .background(P.cardRaised, RoundedCornerShape(50))) {
-                Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(6.dp).background(P.coral, RoundedCornerShape(50)))
+                .background(P.cardRaised, SquircleShape(50))) {
+                Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(6.dp).background(P.coral, SquircleShape(50)))
             }
             val status = when {
                 error != null -> error!!

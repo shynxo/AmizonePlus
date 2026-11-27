@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.screens
 
+import com.student.amizoneplus.ui.kit.SquircleShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -103,7 +104,7 @@ private fun Toggle(value: Boolean, onChange: (Boolean) -> Unit) {
 private fun Choice(values: List<Int>, value: Int, fmt: (Int) -> String, onChange: (Int) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         values.forEach { v ->
-            Box(Modifier.press({ onChange(v) }, Feel.Select, 0.92f).background(if (v == value) P.lav else P.inkRaised, RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 11.dp)) {
+            Box(Modifier.press({ onChange(v) }, Feel.Select, 0.92f).background(if (v == value) P.lav else P.inkRaised, SquircleShape(50)).padding(horizontal = 16.dp, vertical = 11.dp)) {
                 Caps(fmt(v), if (v == value) P.ink else P.onInkSub)
             }
         }
@@ -243,7 +244,7 @@ private fun AboutCard(checkUpdates: () -> Unit, username: String?, email: String
     Ink {
         Caps("About", P.onInkFaint, Modifier.padding(bottom = 14.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(52.dp).background(P.sun, RoundedCornerShape(17.dp)), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(52.dp).background(P.sun, SquircleShape(17.dp)), contentAlignment = Alignment.Center) {
                 T("A+", Type.title, color = P.onHero)
             }
             Column(Modifier.weight(1f).press({
@@ -265,7 +266,7 @@ private fun AboutCard(checkUpdates: () -> Unit, username: String?, email: String
             Type.body, ink = true, sub = true, modifier = Modifier.padding(top = 16.dp))
         Row(
             Modifier.fillMaxWidth().padding(top = 16.dp).press(checkUpdates, Feel.Tap, 0.98f)
-                .background(P.cardRaised, RoundedCornerShape(50)).padding(horizontal = 18.dp, vertical = 14.dp),
+                .background(P.cardRaised, SquircleShape(50)).padding(horizontal = 18.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(androidx.compose.material.icons.Icons.Outlined.SystemUpdate, null, tint = P.text, modifier = Modifier.size(20.dp))
@@ -274,7 +275,7 @@ private fun AboutCard(checkUpdates: () -> Unit, username: String?, email: String
         }
         Caps("Amizone account", P.onInkFaint, Modifier.padding(top = 22.dp, bottom = 10.dp))
         Column(
-            Modifier.fillMaxWidth().background(P.cardRaised, RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 4.dp),
+            Modifier.fillMaxWidth().background(P.cardRaised, SquircleShape(20.dp)).padding(horizontal = 16.dp, vertical = 4.dp),
         ) {
             SettingRow(Icons.Outlined.School, "Amizone ID", right = { T(username ?: "—", Type.caption, ink = true, sub = true) })
             SettingRow(Icons.Outlined.Language, "Email", right = {
@@ -299,7 +300,7 @@ private fun AboutCard(checkUpdates: () -> Unit, username: String?, email: String
         T("Your Amity email login, from the Amizone dashboard. Stored encrypted on this phone only.",
             Type.caption, ink = true, faint = true, modifier = Modifier.padding(top = 8.dp))
         Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            T("Type: Barlow Condensed & DM Mono (SIL Open Font License)", Type.caption, ink = true, sub = true)
+            T("Type: Barlow Condensed & DM Sans (SIL Open Font License)", Type.caption, ink = true, sub = true)
             T("Unofficial app · not affiliated with Amity University", Type.caption, ink = true, sub = true)
             T("No ads. No trackers. Just vibes.", Type.caption, ink = true, sub = true)
         }
@@ -342,14 +343,14 @@ private fun ResultsSheet(s: UiState, onClose: () -> Unit) {
         s.data?.results?.courses.orEmpty().forEachIndexed { i, c ->
             Rise(i) {
                 Row(
-                    Modifier.fillMaxWidth().border(1.2.dp, P.line, RoundedCornerShape(L.radius)).padding(horizontal = L.pad, vertical = 18.dp),
+                    Modifier.fillMaxWidth().border(1.2.dp, P.line, SquircleShape(L.radius)).padding(horizontal = L.pad, vertical = 18.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Column(Modifier.weight(1f)) {
                         T(c.name, Type.label, maxLines = 2)
                         T("${c.code} · ${c.credits.toInt()} credits · GP ${c.gradePoint.toInt()}", Type.caption, sub = true)
                     }
-                    Box(Modifier.widthIn(min = 58.dp).background(P.ink, RoundedCornerShape(16.dp)).padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.widthIn(min = 58.dp).background(P.ink, SquircleShape(16.dp)).padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
                         T(c.grade.ifEmpty { "—" }, Type.numSm, ink = true)
                     }
                 }

@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.screens
 
+import com.student.amizoneplus.ui.kit.SquircleShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -127,7 +128,7 @@ fun Celebration(badge: Badge, onClose: () -> Unit) {
                 }
                 Box(
                     Modifier.size(120.dp).graphicsLayer { scaleX = zoom.value; scaleY = zoom.value }
-                        .border(1.dp, P.line, RoundedCornerShape(L.radius)).background(P.canvas, RoundedCornerShape(L.radius)),
+                        .border(1.dp, P.line, SquircleShape(L.radius)).background(P.canvas, SquircleShape(L.radius)),
                     contentAlignment = Alignment.Center,
                 ) { BadgeArt(badge.short, badge.tag, 84.dp) }
             }
@@ -160,7 +161,7 @@ fun BadgeGallery(earned: List<Badge>, onClose: () -> Unit) {
                 val isLocked = i >= earned.size
                 Column(
                     Modifier.weight(1f).aspectRatio(0.85f).graphicsLayer { alpha = if (isLocked) 0.45f else 1f }
-                        .border(1.2.dp, if (isLocked) P.hairline else P.line, RoundedCornerShape(L.radius)).padding(8.dp),
+                        .border(1.2.dp, if (isLocked) P.hairline else P.line, SquircleShape(L.radius)).padding(8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                 ) {
                     BadgeArt(b.short, b.tag, 58.dp)

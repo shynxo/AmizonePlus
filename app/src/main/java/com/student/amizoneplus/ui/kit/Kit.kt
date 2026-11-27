@@ -168,7 +168,7 @@ fun TargetPicker(value: Int, onChange: (Int) -> Unit, modifier: Modifier = Modif
             val bgc by animateColorAsState(if (on) activeBg else bg, tween(260), label = "tgt")
             Box(
                 Modifier.weight(1f).height(40.dp).press({ if (!on) { haptics.select(); onChange(v) } }, Feel.None, 0.92f)
-                    .background(bgc, RoundedCornerShape(50)),
+                    .background(bgc, SquircleShape(50)),
                 contentAlignment = Alignment.Center,
             ) { Text("$v%", style = Type.label, color = if (on) activeFg else fg, maxLines = 1) }
         }
@@ -238,7 +238,7 @@ fun Card(
         modifier
             .perch()
             .press(onClick, feel)
-            .then(if (inFused) Modifier else Modifier.background(color, RoundedCornerShape(radius)))
+            .then(if (inFused) Modifier else Modifier.background(color, SquircleShape(radius)))
             .padding(padding),
         content = content,
     )
@@ -278,7 +278,7 @@ fun Fab(onClick: () -> Unit, icon: ImageVector = Icons.Outlined.Add) =
 @Composable
 fun Avatar(text: String, color: Color = P.sun, size: Dp = 48.dp) {
     val initials = text.split(' ', '/', '-').filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1) }.uppercase().ifEmpty { "?" }
-    Box(Modifier.perch().size(size).background(color, RoundedCornerShape(size * 0.32f)), contentAlignment = Alignment.Center) {
+    Box(Modifier.perch().size(size).background(color, SquircleShape(size * 0.32f)), contentAlignment = Alignment.Center) {
         Text(initials, style = Type.title.copy(fontSize = (size.value * 0.42f).sp), color = P.onHero)
     }
 }
@@ -303,8 +303,8 @@ fun Chip(text: String, tone: Tone = Tone.Lav, dot: Color? = null) {
     }
     Row(
         Modifier
-            .background(bg, RoundedCornerShape(50))
-            .then(if (tone == Tone.Ghost) Modifier.border(1.dp, P.line, RoundedCornerShape(50)) else Modifier)
+            .background(bg, SquircleShape(50))
+            .then(if (tone == Tone.Ghost) Modifier.border(1.dp, P.line, SquircleShape(50)) else Modifier)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -317,7 +317,7 @@ fun Chip(text: String, tone: Tone = Tone.Lav, dot: Color? = null) {
 @Composable
 fun DropdownPill(text: String, onClick: () -> Unit, bg: Color = P.cream, fg: Color = P.onCream) {
     Row(
-        Modifier.perch().press(onClick, Feel.Select).background(bg, RoundedCornerShape(50)).padding(start = 16.dp, end = 10.dp, top = 9.dp, bottom = 9.dp),
+        Modifier.perch().press(onClick, Feel.Select).background(bg, SquircleShape(50)).padding(start = 16.dp, end = 10.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         T(text, Type.label, color = fg, maxLines = 1)
@@ -330,7 +330,7 @@ fun DropdownPill(text: String, onClick: () -> Unit, bg: Color = P.cream, fg: Col
 @Composable
 fun SelectorPill(icon: ImageVector, text: String, onClick: () -> Unit) {
     Row(
-        Modifier.perch().fillMaxWidth().press(onClick).background(P.cream, RoundedCornerShape(50)).padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        Modifier.perch().fillMaxWidth().press(onClick).background(P.cream, SquircleShape(50)).padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, tint = P.onCream, modifier = Modifier.size(20.dp))
@@ -345,7 +345,7 @@ fun SelectorPill(icon: ImageVector, text: String, onClick: () -> Unit) {
 @Composable
 fun RowScope.StatTile(value: String, label: String, bg: Color, fg: Color = P.onHero, onClick: (() -> Unit)? = null) {
     Row(
-        Modifier.weight(1f).perch().press(onClick).background(bg, RoundedCornerShape(22.dp)).padding(horizontal = 18.dp, vertical = 12.dp),
+        Modifier.weight(1f).perch().press(onClick).background(bg, SquircleShape(22.dp)).padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Text(value, style = Type.num, color = fg, maxLines = 1)
@@ -357,7 +357,7 @@ fun RowScope.StatTile(value: String, label: String, bg: Color, fg: Color = P.onH
 @Composable
 fun SearchPill(value: String, onChange: (String) -> Unit, placeholder: String) {
     Row(
-        Modifier.perch().fillMaxWidth().background(P.cardRaised, RoundedCornerShape(50)).padding(horizontal = 18.dp, vertical = 15.dp),
+        Modifier.perch().fillMaxWidth().background(P.cardRaised, SquircleShape(50)).padding(horizontal = 18.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Outlined.Search, null, tint = P.sub, modifier = Modifier.size(20.dp))
@@ -375,15 +375,14 @@ fun CountdownChip(targetMs: Long, color: Color = P.good) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1000) } }
     val ms = (targetMs - now).coerceAtLeast(0)
-    Box(Modifier.background(color.copy(alpha = 0.2f), RoundedCornerShape(8.dp)).padding(horizontal = 6.dp, vertical = 1.dp)) {
+    Box(Modifier.background(color.copy(alpha = 0.2f), SquircleShape(8.dp)).padding(horizontal = 6.dp, vertical = 1.dp)) {
         T("%d:%02d:%02d".format(ms / 3_600_000, (ms % 3_600_000) / 60_000, (ms % 60_000) / 1000), Type.label, color = color)
     }
 }
 
 /* ───────────── Fused geometry (kept for the menu's unfolding rows) ───────────── */
 
-private fun rr(l: Float, t: Float, r: Float, b: Float, rad: Float) =
-    Path().apply { addRoundRect(RoundRect(Rect(l, t, r, b), CornerRadius(rad, rad))) }
+private fun rr(l: Float, t: Float, r: Float, b: Float, rad: Float) = squirclePath(Rect(l, t, r, b), rad)
 
 private fun Path.unionWith(other: Path): Path = Path().also { it.op(this, other, PathOperation.Union) }
 private fun Path.minus(other: Path): Path = Path().also { it.op(this, other, PathOperation.Difference) }
@@ -439,8 +438,8 @@ fun Fused(modifier: Modifier = Modifier, color: Color = P.card, content: @Compos
 @Composable
 fun PairCards(modifier: Modifier = Modifier, left: @Composable () -> Unit, right: @Composable () -> Unit) {
     Row(modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(L.block)) {
-        Box(Modifier.weight(1f).fillMaxSize().background(P.card, RoundedCornerShape(L.radius))) { left() }
-        Box(Modifier.weight(1f).fillMaxSize().background(P.card, RoundedCornerShape(L.radius))) { right() }
+        Box(Modifier.weight(1f).fillMaxSize().background(P.card, SquircleShape(L.radius))) { left() }
+        Box(Modifier.weight(1f).fillMaxSize().background(P.card, SquircleShape(L.radius))) { right() }
     }
 }
 
@@ -454,8 +453,8 @@ fun RowScope.Btn(label: String, kind: BtnKind = BtnKind.Lav, icon: ImageVector? 
     val fg = when (kind) { BtnKind.Lav -> P.onCream; BtnKind.Ink -> P.bg; BtnKind.Ghost, BtnKind.Outline -> P.text }
     val border = when (kind) { BtnKind.Ghost, BtnKind.Outline -> P.line; else -> bg }
     Row(
-        Modifier.weight(1f).press(onClick, Feel.Press).height(54.dp).background(bg, RoundedCornerShape(50))
-            .border(1.dp, border, RoundedCornerShape(50)).padding(horizontal = 16.dp),
+        Modifier.weight(1f).press(onClick, Feel.Press).height(54.dp).background(bg, SquircleShape(50))
+            .border(1.dp, border, SquircleShape(50)).padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) { Icon(icon, null, tint = fg, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)) }
@@ -467,7 +466,7 @@ fun RowScope.Btn(label: String, kind: BtnKind = BtnKind.Lav, icon: ImageVector? 
 @Composable
 fun OutlineRow(title: String, sub: String? = null, onClick: (() -> Unit)? = null, right: (@Composable () -> Unit)? = null) {
     Row(
-        Modifier.perch().fillMaxWidth().press(onClick).heightIn(min = 72.dp).background(P.card, RoundedCornerShape(24.dp)).padding(start = L.pad, end = 14.dp, top = 14.dp, bottom = 14.dp),
+        Modifier.perch().fillMaxWidth().press(onClick).heightIn(min = 72.dp).background(P.card, SquircleShape(24.dp)).padding(start = L.pad, end = 14.dp, top = 14.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -505,8 +504,8 @@ fun SegBar(pct: Double, marker: Int?, tone: Color, modifier: Modifier = Modifier
     Row(modifier.height(height), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         repeat(segments) { i ->
             val c by animateColorAsState(if (i < filled) tone else track, tween(220), label = "seg")
-            Box(Modifier.weight(1f).fillMaxSize().background(c, RoundedCornerShape(4.dp))
-                .then(if (i == markIdx && i >= filled) Modifier.border(1.dp, P.sub, RoundedCornerShape(4.dp)) else Modifier))
+            Box(Modifier.weight(1f).fillMaxSize().background(c, SquircleShape(4.dp))
+                .then(if (i == markIdx && i >= filled) Modifier.border(1.dp, P.sub, SquircleShape(4.dp)) else Modifier))
         }
     }
 }
@@ -518,11 +517,11 @@ fun WeekBars(values: List<Double?>, height: Dp = 72.dp, bar: Color = P.sky, trac
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         values.forEachIndexed { i, v ->
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.fillMaxWidth().height(height).background(track, RoundedCornerShape(10.dp)), contentAlignment = Alignment.BottomCenter) {
+                Box(Modifier.fillMaxWidth().height(height).background(track, SquircleShape(10.dp)), contentAlignment = Alignment.BottomCenter) {
                     if (v != null) {
                         val f = remember { Animatable(0f) }
                         LaunchedEffect(v) { delay(100L + i * 40L); f.animateTo(v.coerceAtLeast(0.06).toFloat(), tween(650, easing = Motion.emphasized)) }
-                        Box(Modifier.fillMaxWidth().height(height * f.value).background(bar, RoundedCornerShape(10.dp)))
+                        Box(Modifier.fillMaxWidth().height(height * f.value).background(bar, SquircleShape(10.dp)))
                     }
                 }
                 T(days[i], Type.caption.copy(fontSize = 11.sp), sub = true, modifier = Modifier.padding(top = 6.dp))
@@ -610,7 +609,7 @@ fun DayCircles(days: List<com.student.amizoneplus.logic.WeekDay>, selected: Int,
                     drawPath(path, P.onHero)
                 })
                 Row(
-                    Modifier.fillMaxWidth().background(P.onHero, RoundedCornerShape(22.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
+                    Modifier.fillMaxWidth().background(P.onHero, SquircleShape(22.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
@@ -767,7 +766,7 @@ fun ClockDial(arcs: List<Triple<Long, Long, Boolean>>, modifier: Modifier = Modi
 @Composable
 fun <V> Segmented(options: List<Pair<V, String>>, value: V, onChange: (V) -> Unit, modifier: Modifier = Modifier, bg: Color = P.cardRaised, active: Color = P.cream) {
     val haptics = LocalHaptics.current
-    BoxWithConstraints(modifier.fillMaxWidth().height(52.dp).background(bg, RoundedCornerShape(50)).padding(4.dp)) {
+    BoxWithConstraints(modifier.fillMaxWidth().height(52.dp).background(bg, SquircleShape(50)).padding(4.dp)) {
         val segW = maxWidth / options.size
         val idx = options.indexOfFirst { it.first == value }.coerceAtLeast(0)
         val segPx = with(androidx.compose.ui.platform.LocalDensity.current) { segW.toPx() }
@@ -784,7 +783,7 @@ fun <V> Segmented(options: List<Pair<V, String>>, value: V, onChange: (V) -> Uni
         Box(
             Modifier.offset { IntOffset((if (dragging) dragX else pos.value).roundToInt(), 0) }.width(segW).fillMaxSize()
                 .graphicsLayer { scaleX = grow; scaleY = grow }
-                .background(active, RoundedCornerShape(50)),
+                .background(active, SquircleShape(50)),
         )
         Row(Modifier.fillMaxSize().pointerInput(segPx) {
             detectHorizontalDragGestures(

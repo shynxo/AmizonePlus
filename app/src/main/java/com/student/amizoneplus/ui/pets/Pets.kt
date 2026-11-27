@@ -40,7 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.student.amizoneplus.ui.shell.Route
 import com.student.amizoneplus.ui.theme.Haptics
 import com.student.amizoneplus.ui.theme.LocalHaptics
-import com.student.amizoneplus.ui.theme.Mono
+import com.student.amizoneplus.ui.theme.Sans
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
@@ -777,7 +777,7 @@ fun PetLayer(world: PetWorld, choice: String, active: Boolean) {
                     Fx.Kind.Spark -> drawRect(Color.White.copy(alpha = k), Offset(f.x, f.y), Size(px, px))
                     Fx.Kind.Bubble -> {
                         val a = (min(1f, f.age * 8f) * min(1f, (f.life - f.age) * 4f)).coerceIn(0f, 1f)
-                        val layout = measurer.measure(f.text, TextStyle(fontFamily = Mono, fontSize = 11.sp, color = Color(0xFF2B2433)))
+                        val layout = measurer.measure(f.text, TextStyle(fontFamily = Sans, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, fontSize = 11.sp, color = Color(0xFF2B2433)))
                         val w = layout.size.width + 14f * density.density
                         val h = layout.size.height + 8f * density.density
                         val left = (f.x - w / 2).coerceIn(4f, size.width - w - 4f)

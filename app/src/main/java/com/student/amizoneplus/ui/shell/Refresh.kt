@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.shell
 
+import com.student.amizoneplus.ui.kit.SquircleShape
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Shader
 import android.os.Build
@@ -181,7 +182,7 @@ fun StretchRefresh(
                 // No sideways squeeze: the page stays as wide as the coral beneath it.
                 transformOrigin = TransformOrigin(0.5f, 0f)
                 val r = 30.dp.toPx() * min(1f, st * 2.5f)
-                shape = RoundedCornerShape(topStart = r, topEnd = r)
+                shape = com.student.amizoneplus.ui.kit.SquirclePxShape(r, r, 0f, 0f)
                 clip = pull > 0.5f
             },
         ) { content() } // transparent, so the coral runs right down to the first row

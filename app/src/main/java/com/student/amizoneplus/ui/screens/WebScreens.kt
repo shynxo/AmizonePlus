@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.screens
 
+import com.student.amizoneplus.ui.kit.SquircleShape
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.webkit.URLUtil
@@ -254,7 +255,7 @@ fun WebLoginSheet(username: String?, password: String?, onDone: () -> Unit, onCl
         val major = wv?.versionName?.substringBefore('.')?.toIntOrNull() ?: 0
         if (major in 1..89) { // Amizone's login script needs Chrome 80+ (it uses newer JavaScript)
             Box(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp).fillMaxWidth()
-                .background(P.sun, androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+                .background(P.sun, com.student.amizoneplus.ui.kit.SquircleShape(20.dp))
                 .press({
                     val pkg = wv?.packageName ?: "com.google.android.webview"
                     runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("market://details?id=$pkg"))) }

@@ -62,7 +62,7 @@ compileSdk/targetSdk 37 · minSdk 26 (Android 8+). Gradle JDK = Android Studio's
 |---|---|
 | `res/values/strings.xml` | App name |
 | `res/values/themes.xml`, `res/values-night/themes.xml` | Window background (light / dark) + transparent system bars |
-| `res/font/*.ttf` | Barlow Condensed + DM Mono (binary — copy from the project) |
+| `res/font/*.ttf` | Barlow Condensed + DM Sans (binary — copy from the project) |
 | `res/xml/file_paths.xml` | Lets PDF/PPT viewer apps open downloaded LMS files |
 | `res/mipmap-*` | Launcher icons |
 
@@ -131,7 +131,7 @@ compileSdk/targetSdk 37 · minSdk 26 (Android 8+). Gradle JDK = Android Studio's
 
 - **Amizone changed a page?** Fix the selector in `data/Parsers.kt`.
 - **Colours / fonts / spacing / motion?** `ui/theme/Theme.kt` (`P`, `Type`, `L`, `Motion`).
-- **Fonts:** Barlow Condensed (titles) and DM Mono (body) live in `res/font/` and are set up as
+- **Fonts:** Barlow Condensed (titles) and DM Sans (body) live in `res/font/` and are set up as
   `Condensed` and `Mono` in `Theme.kt`. Both are OFL-licensed; their licences are in `FONTS-OFL-*.txt`.
 - **Dark / light:** follows the phone. Colours for each mode are `DarkPalette` / `LightPalette` in
   `Theme.kt`; hero colours (`P.sage`, `P.coral`, `P.peri`, `P.sky`, `P.sun`) are shared by both.

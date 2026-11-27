@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.shell
 
+import com.student.amizoneplus.ui.kit.SquircleShape
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -187,7 +188,7 @@ fun HeaderInk(modifier: Modifier = Modifier) = Box(modifier.fillMaxWidth()) { He
 @Composable
 fun ErrorBanner(text: String, action: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().press(onClick).background(P.badSoft, RoundedCornerShape(22.dp)).padding(16.dp),
+        Modifier.fillMaxWidth().press(onClick).background(P.badSoft, SquircleShape(22.dp)).padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -203,18 +204,18 @@ fun ErrorBanner(text: String, action: String, onClick: () -> Unit) {
 @Composable
 fun HumanCheckBanner(onSignIn: () -> Unit) {
     Column(
-        Modifier.fillMaxWidth().press(onSignIn, Feel.Select, 0.97f).background(P.sun, RoundedCornerShape(28.dp)).padding(20.dp),
+        Modifier.fillMaxWidth().press(onSignIn, Feel.Select, 0.97f).background(P.sun, SquircleShape(28.dp)).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(34.dp).background(P.onHero, RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(34.dp).background(P.onHero, SquircleShape(11.dp)), contentAlignment = Alignment.Center) {
                 Icon(androidx.compose.material.icons.Icons.Outlined.VerifiedUser, null, tint = P.sun, modifier = Modifier.size(19.dp))
             }
             T("NOTHING'S BROKEN", Type.title, color = P.onHero, modifier = Modifier.weight(1f))
         }
         T("Amizone just wants a quick human check before it lets the app back in. Tick the box once and you're set. Until then you're seeing your last saved data.",
             Type.caption, color = P.onHero.copy(alpha = 0.8f))
-        Box(Modifier.padding(top = 6.dp).background(P.onHero, RoundedCornerShape(50)).padding(horizontal = 18.dp, vertical = 10.dp)) {
+        Box(Modifier.padding(top = 6.dp).background(P.onHero, SquircleShape(50)).padding(horizontal = 18.dp, vertical = 10.dp)) {
             T("Do the check →", Type.label, color = P.sun)
         }
     }
@@ -281,7 +282,7 @@ fun HeroPage(
                         .pointerInput(Unit) {} // the sheet owns touches over it (none leak to the hero beneath)
                         .fillMaxWidth()
                         .heightIn(min = screenH)
-                        .background(P.sheet, RoundedCornerShape(topStart = L.sheetRadius * (1 - 0.4f * k), topEnd = L.sheetRadius * (1 - 0.4f * k)))
+                        .background(P.sheet, SquircleShape(topStart = L.sheetRadius * (1 - 0.4f * k), topEnd = L.sheetRadius * (1 - 0.4f * k)))
                         .padding(start = L.page, end = L.page, top = 18.dp, bottom = navClearance),
                     verticalArrangement = Arrangement.spacedBy(L.block),
                 ) {
@@ -428,13 +429,13 @@ fun BottomNav(
                         }
                     },
                 )
-                .background(P.nav.copy(alpha = 0.92f), RoundedCornerShape(L.nav / 2)).padding(pad),
+                .background(P.nav.copy(alpha = 0.92f), SquircleShape(L.nav / 2)).padding(pad),
             contentAlignment = Alignment.Center,
         ) {
             // Tabs: the tile + icons, fading out as the pill shrinks into the back button.
             if (tabsAlpha > 0.01f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = tabsAlpha }) {
                 Box(Modifier.offset { androidx.compose.ui.unit.IntOffset(((if (dragging) dragX else tile.value) + 3.dp.toPx()).roundToInt(), 0) }
-                    .size(slot - 6.dp, L.nav - pad * 2).background(P.sky, RoundedCornerShape((L.nav - pad * 2) / 2)))
+                    .size(slot - 6.dp, L.nav - pad * 2).background(P.sky, SquircleShape((L.nav - pad * 2) / 2)))
                 Row(Modifier.fillMaxSize()) {
                     TABS.forEachIndexed { i, (r, icon) ->
                         val tint by animateColorAsState(if (i == shown) P.onHero else Color(0xFFDCDCE0), label = "navtint")
@@ -450,7 +451,7 @@ fun BottomNav(
             // Back arrow, fading in as the pill becomes a square.
             if (backAlpha > 0.01f) Box(
                 Modifier.fillMaxSize().graphicsLayer { alpha = backAlpha; val s = 0.7f + 0.3f * backAlpha; scaleX = s; scaleY = s }
-                    .background(P.sky, RoundedCornerShape((L.nav - pad * 2) / 2)),
+                    .background(P.sky, SquircleShape((L.nav - pad * 2) / 2)),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = P.onHero, modifier = Modifier.size(22.dp)) }
         }

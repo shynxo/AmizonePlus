@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.screens
 
+import com.student.amizoneplus.ui.kit.SquircleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -90,7 +91,7 @@ fun LoginScreen(vm: AppViewModel, ctxError: String?) {
             .verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Box(Modifier.size(64.dp).background(P.sun, RoundedCornerShape(20.dp)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(64.dp).background(P.sun, SquircleShape(20.dp)), contentAlignment = Alignment.Center) {
             Icon(Icons.Outlined.School, null, tint = P.onHero, modifier = Modifier.size(30.dp))
         }
         T("WELCOME", Type.hero, modifier = Modifier.padding(top = 24.dp))
@@ -99,12 +100,12 @@ fun LoginScreen(vm: AppViewModel, ctxError: String?) {
 
         T("Amizone ID", Type.caption, sub = true, modifier = Modifier.padding(bottom = 8.dp))
         OutlinedTextField(
-            user, { user = it }, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(18.dp), colors = fieldColors,
+            user, { user = it }, Modifier.fillMaxWidth(), singleLine = true, shape = SquircleShape(18.dp), colors = fieldColors,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
         )
         T("Password", Type.caption, sub = true, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
         OutlinedTextField(
-            pass, { pass = it }, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(18.dp), colors = fieldColors,
+            pass, { pass = it }, Modifier.fillMaxWidth(), singleLine = true, shape = SquircleShape(18.dp), colors = fieldColors,
             visualTransformation = if (show) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
             keyboardActions = KeyboardActions(onGo = { submit() }),
@@ -118,7 +119,7 @@ fun LoginScreen(vm: AppViewModel, ctxError: String?) {
 
         Row(
             Modifier.padding(top = 24.dp).fillMaxWidth().height(58.dp).press(if (busy) null else ::submit, Feel.Press)
-                .background(P.cream, RoundedCornerShape(50)),
+                .background(P.cream, SquircleShape(50)),
             horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
         ) {
             if (busy) CircularProgressIndicator(color = P.onCream, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)

@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.screens
 
+import com.student.amizoneplus.ui.kit.SquircleShape
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -90,9 +91,9 @@ fun ScheduleScreen(s: UiState, onRefresh: () -> Unit, banner: (@Composable () ->
                 ClockDial(classes.map { Triple(it.startMs, it.endMs, it == hot) }, Modifier.fillMaxWidth(0.78f).aspectRatio(1f))
             }
             Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.background(P.onHero.copy(alpha = 0.08f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 8.dp)) { T(tz, Type.label, color = P.onHero) }
+                Box(Modifier.background(P.onHero.copy(alpha = 0.08f), SquircleShape(50)).padding(horizontal = 14.dp, vertical = 8.dp)) { T(tz, Type.label, color = P.onHero) }
                 Box(Modifier.weight(1f))
-                Box(Modifier.background(P.onHero.copy(alpha = 0.08f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Box(Modifier.background(P.onHero.copy(alpha = 0.08f), SquircleShape(50)).padding(horizontal = 14.dp, vertical = 8.dp)) {
                     T(SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now)), Type.label, color = P.onHero)
                 }
             }
@@ -109,8 +110,8 @@ fun ScheduleScreen(s: UiState, onRefresh: () -> Unit, banner: (@Composable () ->
                             val n = s.data?.schedule.orEmpty().count { sameDay(it.startMs, d) }
                             Row(
                                 Modifier.press({ day = d }, if (active) Feel.None else Feel.Select, 0.94f)
-                                    .background(if (active) P.cream else Color.Transparent, RoundedCornerShape(50))
-                                    .border(1.dp, if (active) P.cream else P.line, RoundedCornerShape(50))
+                                    .background(if (active) P.cream else Color.Transparent, SquircleShape(50))
+                                    .border(1.dp, if (active) P.cream else P.line, SquircleShape(50))
                                     .padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -141,7 +142,7 @@ fun ScheduleScreen(s: UiState, onRefresh: () -> Unit, banner: (@Composable () ->
                             Card(color = P.card) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                     Column(
-                                        Modifier.width(66.dp).background(if (past) P.cardRaised else P.coral, RoundedCornerShape(20.dp)).padding(vertical = 10.dp),
+                                        Modifier.width(66.dp).background(if (past) P.cardRaised else P.coral, SquircleShape(20.dp)).padding(vertical = 10.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                     ) {
                                         Caps(e.timeMs?.let { SimpleDateFormat("MMM", Locale.getDefault()).format(Date(it)).uppercase() } ?: "—", if (past) P.sub else P.onHero)
@@ -173,7 +174,7 @@ fun ScheduleScreen(s: UiState, onRefresh: () -> Unit, banner: (@Composable () ->
 @Composable
 private fun NowLine(now: Long) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.background(P.sky, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 4.dp)) { T(hm(now), Type.caption, color = P.onHero) }
+        Box(Modifier.background(P.sky, SquircleShape(50)).padding(horizontal = 10.dp, vertical = 4.dp)) { T(hm(now), Type.caption, color = P.onHero) }
         Box(Modifier.weight(1f).height(1.5.dp).background(P.sky.copy(alpha = 0.6f)))
     }
 }

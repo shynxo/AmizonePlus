@@ -34,10 +34,13 @@ object NotifArt {
         val c = Canvas(bmp)
         val bg = when (kind) { "exam" -> PERI; "class" -> SAGE; else -> SUN }
         val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = bg }
-        c.drawRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), 56f, 56f, p)
+        // Squircle card, like the rest of the app.
+        c.drawPath(com.student.amizoneplus.ui.kit.squirclePath(androidx.compose.ui.geometry.Rect(0f, 0f, w.toFloat(), h.toFloat()), 56f).let {
+            (it as androidx.compose.ui.graphics.AndroidPath).internalPath }, p)
 
         val condensed = runCatching { ResourcesCompat.getFont(context, R.font.barlow_condensed_bold) }.getOrNull() ?: Typeface.DEFAULT_BOLD
-        val mono = runCatching { ResourcesCompat.getFont(context, R.font.dm_mono_medium) }.getOrNull() ?: Typeface.MONOSPACE
+        val mono = runCatching { ResourcesCompat.getFont(context, R.font.dm_sans)!!.let { if (android.os.Build.VERSION.SDK_INT >= 28) Typeface.create(it, 600, false) else Typeface.create(it, Typeface.BOLD) } }
+            .getOrNull() ?: Typeface.DEFAULT_BOLD // DM Sans, like the app
 
         // Pet on the right.
         val petW = if (big) 300 else 150

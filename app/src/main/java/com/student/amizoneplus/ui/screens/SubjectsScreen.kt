@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.screens
 
+import com.student.amizoneplus.ui.kit.SquircleShape
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -181,7 +182,7 @@ private fun SubjectList(
             Rise(i) {
                 with(shared) {
                     Card(
-                        Modifier.sharedBounds(rememberSharedContentState("card-${c.code}"), anim, clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(28.dp))),
+                        Modifier.sharedBounds(rememberSharedContentState("card-${c.code}"), anim, clipInOverlayDuringTransition = OverlayClip(SquircleShape(28.dp))),
                         onClick = { onOpen(c.code) },
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -217,7 +218,7 @@ private fun FilterMenu(value: String, onPick: (String) -> Unit) {
         androidx.compose.material3.DropdownMenu(
             expanded = open,
             onDismissRequest = { open = false },
-            shape = RoundedCornerShape(22.dp),
+            shape = SquircleShape(22.dp),
             containerColor = P.cardRaised,
             offset = androidx.compose.ui.unit.DpOffset(0.dp, 8.dp),
         ) {
@@ -307,7 +308,7 @@ private fun SubjectDetail(
     }
 
     with(shared) {
-        Box(Modifier.fillMaxSize().sharedBounds(rememberSharedContentState("card-${c.code}"), anim, clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(28.dp)))) {
+        Box(Modifier.fillMaxSize().sharedBounds(rememberSharedContentState("card-${c.code}"), anim, clipInOverlayDuringTransition = OverlayClip(SquircleShape(28.dp)))) {
             HeroPage(
                 heroColor = P.coral,
                 refreshing = s.refreshing,
