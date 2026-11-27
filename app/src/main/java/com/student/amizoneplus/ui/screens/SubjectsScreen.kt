@@ -385,7 +385,7 @@ private val WISHES = listOf(
 /** …and for subjects that haven't even had a class yet. */
 private val NO_CLASS_WISHES = listOf(
     "BRUH 💀 there aren't even classes yet",
-    "why you wanna be present in that type shit 💀",
+    "why you wanna be present in that shit 💀",
     "Attendance for a class that doesn't exist? Bold.",
     "Bro's attending ghost lectures 👻",
 )

@@ -345,12 +345,16 @@ fun SelectorPill(icon: ImageVector, text: String, onClick: () -> Unit) {
 @Composable
 fun RowScope.StatTile(value: String, label: String, bg: Color, fg: Color = P.onHero, onClick: (() -> Unit)? = null) {
     Row(
-        Modifier.weight(1f).perch().press(onClick).background(bg, SquircleShape(22.dp)).padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.Top,
+        Modifier.weight(1f).perch().press(onClick).background(bg, SquircleShape(22.dp)).padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(value, style = Type.num, color = fg, maxLines = 1)
-        Spacer(Modifier.width(8.dp))
-        T(label, Type.caption, color = fg.copy(alpha = 0.8f), modifier = Modifier.padding(top = 6.dp), maxLines = 2)
+        // Trim the font's built-in space above/below the digits, so the number sits centred
+        // in the box instead of floating high with an empty band underneath.
+        Text(value, style = Type.num.copy(lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+            androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.Both)),
+            color = fg, maxLines = 1)
+        Spacer(Modifier.width(10.dp))
+        T(label, Type.caption, color = fg.copy(alpha = 0.8f), maxLines = 2)
     }
 }
 
