@@ -464,7 +464,7 @@ private fun Stepper(value: Double, onChange: (Double) -> Unit) {
     fun btn(icon: androidx.compose.ui.graphics.vector.ImageVector, next: Double, disabled: Boolean) {
         Box(
             Modifier.size(40.dp).press(if (disabled) null else ({ onChange(next) }), Feel.None, 0.88f)
-                .background(if (disabled) P.cardRaised else P.cream, CircleShape),
+                .background(if (disabled) P.cardRaised else P.cream, SquircleShape(50)),
             contentAlignment = Alignment.Center,
         ) { Icon(icon, null, tint = if (disabled) P.faint else P.onCream, modifier = Modifier.size(18.dp)) }
     }

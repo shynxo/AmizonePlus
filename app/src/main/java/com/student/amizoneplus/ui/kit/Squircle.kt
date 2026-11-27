@@ -21,7 +21,7 @@ import kotlin.math.min
  * Each corner of nominal radius r is one cubic curve that starts 1.45·r from the corner on
  * both edges, with control points 0.2 of that way in. That keeps the corner the same visual
  * size as a circular one of radius r (the curve's midpoint sits where the circle's would).
- * A radius of half the short side or more is a capsule (pill), drawn as a true stadium.
+ * A radius of half the short side or more is a pill, whose ends are squircle curves too.
  */
 
 private const val SPAN = 1.45f
@@ -32,11 +32,8 @@ fun squirclePath(rect: Rect, tl: Float, tr: Float, br: Float, bl: Float): Path {
     val half = min(rect.width, rect.height) / 2f
     val path = Path()
     if (half <= 0f) return path
-    // All corners at least half the short side: it's a pill, keep it a perfect capsule.
-    if (min(min(tl, tr), min(br, bl)) >= half * 0.98f) {
-        path.addRoundRect(RoundRect(rect, CornerRadius(half)))
-        return path
-    }
+    // All corners at least half the short side: it's a pill, with squircle ends.
+    if (min(min(tl, tr), min(br, bl)) >= half * 0.98f) return squirclePillPath(rect)
     fun span(r: Float) = min(r * SPAN, half)
     val a = span(tl); val b = span(tr); val c = span(br); val d = span(bl)
     val l = rect.left; val t = rect.top; val r = rect.right; val btm = rect.bottom

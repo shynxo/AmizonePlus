@@ -287,7 +287,7 @@ fun QuickMenuOverlay(
                     .offset { IntOffset(btn.left.roundToInt(), btn.top.roundToInt()) }
                     .size(btn.width.toDp(), btn.height.toDp())
                     .press(onClose, Feel.Select, 0.9f)
-                    .background(P.cream, CircleShape),
+                    .background(P.cream, com.student.amizoneplus.ui.kit.SquircleShape(50)),
                 contentAlignment = Alignment.Center,
             ) {
                 MenuGlyph({ progress() }, P.onCream, Modifier.size(btn.width.toDp() * 0.44f))

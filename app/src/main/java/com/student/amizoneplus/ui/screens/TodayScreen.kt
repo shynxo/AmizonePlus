@@ -349,7 +349,7 @@ private fun AccountPill(text: String, email: String, password: () -> String?) {
         ) {
             Icon(Icons.Outlined.School, null, tint = P.onCream, modifier = Modifier.size(20.dp))
             T(text, Type.label, color = P.onCream, maxLines = 1, modifier = Modifier.weight(1f).padding(horizontal = 12.dp))
-            Box(Modifier.size(42.dp).background(P.onCream, CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(42.dp).background(P.onCream, com.student.amizoneplus.ui.kit.SquircleShape(50)), contentAlignment = Alignment.Center) {
                 Icon(Icons.Outlined.KeyboardArrowDown, null, tint = P.cream, modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = 180f * k })
             }
         }

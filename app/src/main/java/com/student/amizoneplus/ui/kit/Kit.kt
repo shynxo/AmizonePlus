@@ -260,7 +260,7 @@ fun CircleButton(
     feel: Feel = Feel.Tap,
     badge: Boolean = false,
 ) {
-    Box(Modifier.perch().size(size).press(onClick, feel, 0.9f).background(bg, CircleShape), contentAlignment = Alignment.Center) {
+    Box(Modifier.perch().size(size).press(onClick, feel, 0.9f).background(bg, SquircleShape(50)), contentAlignment = Alignment.Center) {
         Icon(icon, null, tint = fg, modifier = Modifier.size(size * 0.44f))
         if (badge) Box(Modifier.align(Alignment.TopEnd).offset(x = (-8).dp, y = 9.dp).size(8.dp).background(P.red, CircleShape))
     }
@@ -335,7 +335,7 @@ fun SelectorPill(icon: ImageVector, text: String, onClick: () -> Unit) {
     ) {
         Icon(icon, null, tint = P.onCream, modifier = Modifier.size(20.dp))
         T(text, Type.label, color = P.onCream, maxLines = 1, modifier = Modifier.weight(1f).padding(horizontal = 12.dp))
-        Box(Modifier.size(42.dp).background(P.onCream, CircleShape), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(42.dp).background(P.onCream, SquircleShape(50)), contentAlignment = Alignment.Center) {
             Icon(Icons.Outlined.KeyboardArrowDown, null, tint = P.cream, modifier = Modifier.size(20.dp))
         }
     }

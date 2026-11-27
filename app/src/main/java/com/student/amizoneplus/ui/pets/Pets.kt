@@ -782,7 +782,7 @@ fun PetLayer(world: PetWorld, choice: String, active: Boolean) {
                         val h = layout.size.height + 8f * density.density
                         val left = (f.x - w / 2).coerceIn(4f, size.width - w - 4f)
                         val top = f.y - h - 8f * density.density
-                        drawRoundRect(Color.White.copy(alpha = a), Offset(left, top), Size(w, h), CornerRadius(h / 2))
+                        drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(left, top, left + w, top + h)), Color.White.copy(alpha = a))
                         drawRect(Color.White.copy(alpha = a), Offset(f.x - 3f * density.density, top + h - 1f), Size(6f * density.density, 4f * density.density))
                         drawText(layout, topLeft = Offset(left + 7f * density.density, top + 4f * density.density), alpha = a)
                     }

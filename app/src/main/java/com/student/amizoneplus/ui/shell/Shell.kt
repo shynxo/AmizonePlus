@@ -155,7 +155,7 @@ fun MenuGlyph(t: () -> Float, color: Color, modifier: Modifier = Modifier) {
 fun MenuCircleButton(size: androidx.compose.ui.unit.Dp = 48.dp, bg: Color = P.cream, fg: Color = P.onCream) {
     val menu = LocalMenu.current
     Box(
-        Modifier.menuAnchor(menu).perch().size(size).press({ menu.toggle() }, Feel.Select, 0.9f).background(bg, CircleShape),
+        Modifier.menuAnchor(menu).perch().size(size).press({ menu.toggle() }, Feel.Select, 0.9f).background(bg, com.student.amizoneplus.ui.kit.SquircleShape(50)),
         contentAlignment = Alignment.Center,
     ) { MenuGlyph({ 0f }, fg, Modifier.size(size * 0.44f)) }
 }
