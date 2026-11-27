@@ -1,4 +1,4 @@
-﻿package com.student.amizoneplus.ui.screens
+package com.student.amizoneplus.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -181,11 +181,6 @@ fun MoreScreen(
                 SettingRow(Icons.Outlined.Description, "Exam reminders", right = { Toggle(st.examReminders) { v -> updateSettings { it.copy(examReminders = v) } } })
                 Caps("Attendance target", P.onInkFaint, Modifier.padding(top = 20.dp, bottom = 12.dp))
                 Choice(com.student.amizoneplus.logic.TARGETS, st.threshold, { "$it%" }) { v -> updateSettings { it.copy(threshold = v) } }
-                Caps("Menu animation", P.onInkFaint, Modifier.padding(top = 20.dp, bottom = 12.dp))
-                val styles = listOf("fade", "slide")
-                Choice(styles.indices.toList(), styles.indexOf(st.menuStyle).coerceAtLeast(0), { listOf("Fade in", "Slide down")[it] }) { i ->
-                    updateSettings { it.copy(menuStyle = styles[i]) }
-                }
                 Caps("Pets", P.onInkFaint, Modifier.padding(top = 20.dp, bottom = 12.dp))
                 val petOpts = listOf("cat", "dog", "both", "none")
                 Choice(petOpts.indices.toList(), petOpts.indexOf(st.pets).coerceAtLeast(0),

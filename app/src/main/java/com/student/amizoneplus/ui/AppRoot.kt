@@ -126,15 +126,15 @@ private fun Main(vm: AppViewModel, s: UiState) {
     fun openMenu() {
         if (menuOpen) return
         haptics.expand(); menuMounted = true; menuOpen = true
-        scope.launch { z.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 170f)) }
+        scope.launch { z.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 420f)) }
     }
     fun closeMenu(after: (() -> Unit)? = null) {
         if (!menuOpen) { after?.invoke(); return }
         haptics.collapse(); menuOpen = false
         scope.launch {
-            // Rows fold back first (~0.3 s), the backdrop follows and settles; then unmount.
-            kotlinx.coroutines.delay(if (s.settings.menuStyle == "slide") 120 else 170) // let the cards blur away first
-            z.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 260f))
+            // Rows fold back first (~0.2 s), the backdrop follows and settles; then unmount.
+            kotlinx.coroutines.delay(90) // let the cards start blurring away first
+            z.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 520f))
             if (!menuOpen) menuMounted = false
             after?.invoke()
         }
@@ -286,7 +286,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
             // Pets roam above the screens and the nav (so they can be carried onto a tab).
             com.student.amizoneplus.ui.pets.PetLayer(pets, s.settings.pets, active = !menuMounted && web == null && !gallery && s.celebrate == null)
 
-            if (menuMounted) QuickMenuOverlay(menuOpen, s.settings.menuStyle, { z.value }, menuHaze, { closeMenu() }) { path, title ->
+            if (menuMounted) QuickMenuOverlay(menuOpen, { z.value }, menuHaze, { closeMenu() }) { path, title ->
                 // Sections the app already shows natively open in the app's own UI.
                 when (path.lowercase()) {
                     "/examination/examschedule" -> { scheduleFocus = "exams"; go(Route.Schedule) }

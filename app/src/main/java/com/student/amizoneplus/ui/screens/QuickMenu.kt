@@ -127,7 +127,7 @@ private fun easeOut(t: Float) = 1f - (1f - t).pow(4)
 fun screenExit(m: Float) = (m * MENU_OPEN_MS / 300f).coerceIn(0f, 1f).let { easeOut(it) }
 
 @Composable
-fun QuickMenuOverlay(open: Boolean, style: String, fade: () -> Float, hazeState: dev.chrisbanes.haze.HazeState, onClose: () -> Unit, openPage: (String, String) -> Unit) {
+fun QuickMenuOverlay(open: Boolean, fade: () -> Float, hazeState: dev.chrisbanes.haze.HazeState, onClose: () -> Unit, openPage: (String, String) -> Unit) {
     val haptics = LocalHaptics.current
     var openGroup by remember { mutableStateOf<String?>(null) }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -140,29 +140,19 @@ fun QuickMenuOverlay(open: Boolean, style: String, fade: () -> Float, hazeState:
     val fadeLen = with(density) { 150.dp.toPx() }
     // The edge starts at the header and travels down with the rows as they unfurl.
     val headerBottom = with(density) { (statusTop + L.page + L.header).toPx() }
-    // Each row has its own spring: in with a soft bounce, staggered top to bottom;
-    // out quickly in reverse order with no bounce.
+    // Each row has its own timer, staggered top to bottom in, bottom to top out.
     val rows = remember { List(MENU_GROUPS.size) { androidx.compose.animation.core.Animatable(0f) } }
-    val fadeStyle = style != "slide"
     LaunchedEffect(open) {
         rows.forEachIndexed { i, a ->
             launch {
-                if (fadeStyle) {
-                    // Fade: cards come into focus where they belong — unblur + a small rise. Quick.
-                    if (open) {
-                        kotlinx.coroutines.delay(i * 28L)
-                        a.animateTo(1f, tween(300, easing = com.student.amizoneplus.ui.theme.Motion.emphasized))
-                    } else {
-                        // Out a touch slower than in, blurring away as they sink.
-                        kotlinx.coroutines.delay((rows.size - 1 - i) * 22L)
-                        a.animateTo(0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0f, 0.7f, 0.2f)))
-                    }
-                } else if (open) {
-                    kotlinx.coroutines.delay(30L + i * 42L)
-                    a.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.62f, stiffness = 320f))
+                // Cards come into focus where they belong: unblur + a small rise. Snappy, so
+                // the menu feels instant; leaving is a hair longer and deeper than arriving.
+                if (open) {
+                    kotlinx.coroutines.delay(i * 16L)
+                    a.animateTo(1f, tween(190, easing = com.student.amizoneplus.ui.theme.Motion.emphasized))
                 } else {
-                    kotlinx.coroutines.delay((rows.size - 1 - i) * 22L)
-                    a.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 900f))
+                    kotlinx.coroutines.delay((rows.size - 1 - i) * 12L)
+                    a.animateTo(0f, tween(210, easing = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0f, 0.7f, 0.2f)))
                 }
             }
         }
@@ -226,23 +216,16 @@ fun QuickMenuOverlay(open: Boolean, style: String, fade: () -> Float, hazeState:
                 MENU_GROUPS.forEachIndexed { i, g ->
                     Box(Modifier.graphicsLayer {
                         val t = rows[i].value
-                        if (fadeStyle) {
-                            // Leaving is a little more pronounced than arriving: deeper blur, further sink.
-                            val k = if (open) 1f else 1.6f
-                            alpha = t.coerceIn(0f, 1f)
-                            translationY = 14.dp.toPx() * k * (1f - t)
-                            val sc = 1f - (0.03f * k) * (1f - t)
-                            scaleX = sc; scaleY = sc
-                            val r = 18.dp.toPx() * k * (1f - t)
-                            renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && r > 0.5f)
-                                android.graphics.RenderEffect.createBlurEffect(r, r, android.graphics.Shader.TileMode.DECAL).asComposeRenderEffect()
-                            else null
-                        } else { // springs past 1 a little: the bounce
-                            alpha = (t * 2f).coerceIn(0f, 1f)
-                            translationY = -(i + 1) * rowStep.toPx() * 0.9f * (1f - t)
-                            val sc = 0.94f + 0.06f * t
-                            scaleX = sc; scaleY = sc
-                        }
+                        // Leaving is a little more pronounced than arriving: deeper blur, further sink.
+                        val k = if (open) 1f else 1.6f
+                        alpha = t.coerceIn(0f, 1f)
+                        translationY = 14.dp.toPx() * k * (1f - t)
+                        val sc = 1f - (0.03f * k) * (1f - t)
+                        scaleX = sc; scaleY = sc
+                        val r = 18.dp.toPx() * k * (1f - t)
+                        renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && r > 0.5f)
+                            android.graphics.RenderEffect.createBlurEffect(r, r, android.graphics.Shader.TileMode.DECAL).asComposeRenderEffect()
+                        else null
                     }) {
                         UnfoldCard(
                             open = openGroup == g.title,
