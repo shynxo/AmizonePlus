@@ -1,5 +1,8 @@
 package com.student.amizoneplus.ui.screens
 
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.Text
@@ -120,7 +123,7 @@ fun SubjectsScreen(
     SharedTransitionLayout {
         AnimatedContent(
             open,
-            transitionSpec = { fadeIn(tween(Motion.MORPH_MS, easing = Motion.emphasized)) togetherWith fadeOut(tween(Motion.MORPH_MS / 2)) },
+            transitionSpec = { fadeIn(tween(240, easing = Motion.emphasized)) togetherWith fadeOut(tween(160)) },
             label = "subjects",
         ) { code ->
             val course = courses.firstOrNull { it.code == code }
@@ -186,7 +189,7 @@ private fun SubjectList(
         },
     ) {
         // The sheet that slides up over the coral: every subject as a tile; tap one to open it in place.
-        SubjectBars(shown, t, s, Modifier.fillMaxWidth(), onOpen)
+        SubjectBars(shown, t, s, Modifier.fillMaxWidth(), shared, anim, onOpen)
         if (shown.isEmpty()) T("No subjects here.", Type.body, sub = true, modifier = Modifier.padding(top = 8.dp))
     }
 }
@@ -220,41 +223,53 @@ private fun FilterMenu(value: String, onPick: (String) -> Unit) {
 private object AttendanceIntro { var played = false }
 
 /**
- * Every subject as a tile in a two-column grid: short name, percentage, a slim bar against
- * your target (the notch) and what it means ("can skip 13", "attend 4 more"). Tap a tile and
- * its details open right below its row: full name, type, the exact standing, the code, and a
- * way into the full subject page. One open at a time; tap again to close.
+ * Every subject as a tile in a two-column grid: short name, a slim bar against your target
+ * (the notch) with the percentage beside it, and what it means ("can skip 13"). Tap a tile
+ * and it morphs (growing, with a quick blur) into the subject's full page.
  */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun SubjectBars(courses: List<Course>, threshold: Int, s: UiState, modifier: Modifier, onOpen: (String) -> Unit) {
-    val haptics = LocalHaptics.current
+private fun SubjectBars(
+    courses: List<Course>, threshold: Int, s: UiState, modifier: Modifier,
+    shared: SharedTransitionScope, anim: AnimatedVisibilityScope, onOpen: (String) -> Unit,
+) {
     val animate = remember { !AttendanceIntro.played }
     LaunchedEffect(Unit) { AttendanceIntro.played = true }
-    var expanded by rememberSaveable { mutableStateOf<String?>(null) }
-    Column(modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         courses.chunked(2).forEachIndexed { row, pair ->
-            Row(Modifier.padding(top = if (row == 0) 0.dp else 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 pair.forEachIndexed { col, c ->
-                    AttendanceTile(c, threshold, row * 2 + col, animate, expanded == c.code, Modifier.weight(1f)) {
-                        if (expanded == c.code) { haptics.collapse(); expanded = null } else { haptics.expand(); expanded = c.code }
+                    val m = with(shared) {
+                        Modifier.weight(1f)
+                            .sharedBounds(rememberSharedContentState("card-${c.code}"), anim,
+                                boundsTransform = MorphBounds, clipInOverlayDuringTransition = OverlayClip(SquircleShape(24.dp)))
+                            .blurMorph(anim)
                     }
+                    AttendanceTile(c, threshold, row * 2 + col, animate, false, m) { onOpen(c.code) }
                 }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
-            val open = pair.firstOrNull { it.code == expanded }
-            androidx.compose.animation.AnimatedVisibility(
-                visible = open != null,
-                enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 380f)) +
-                    androidx.compose.animation.fadeIn(tween(220, delayMillis = 60)),
-                exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 520f)) +
-                    androidx.compose.animation.fadeOut(tween(120)),
-            ) {
-                // Keep showing the last opened subject while this row closes.
-                var last by remember { mutableStateOf<Course?>(null) }
-                if (open != null) last = open
-                last?.let { SubjectPanel(it, threshold, s) { onOpen(it.code) } }
-            }
         }
+    }
+}
+
+/** Fast, settled growth for the tile <-> page morph. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+private val MorphBounds = androidx.compose.animation.BoundsTransform { _, _ ->
+    androidx.compose.animation.core.spring(dampingRatio = 0.92f, stiffness = 520f)
+}
+
+/** Blurs content while it's arriving or leaving, so the two ends of a morph melt into each other. */
+@Composable
+private fun Modifier.blurMorph(anim: AnimatedVisibilityScope): Modifier {
+    val b by anim.transition.animateFloat(transitionSpec = { tween(240) }, label = "blurMorph") {
+        if (it == androidx.compose.animation.EnterExitState.Visible) 0f else 1f
+    }
+    return graphicsLayer {
+        val r = 16.dp.toPx() * b
+        renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && r > 0.5f)
+            android.graphics.RenderEffect.createBlurEffect(r, r, android.graphics.Shader.TileMode.DECAL).asComposeRenderEffect()
+        else null
     }
 }
 
@@ -288,8 +303,7 @@ private fun AttendanceTile(c: Course, threshold: Int, index: Int, animate: Boole
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             T(name, Type.label, color = ink, maxLines = 1, modifier = Modifier.weight(1f))
-            Icon(Icons.Outlined.KeyboardArrowDown, null, tint = ink.copy(alpha = 0.6f),
-                modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = 180f * sel })
+            Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, tint = ink.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
         }
         Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -307,32 +321,6 @@ private fun AttendanceTile(c: Course, threshold: Int, index: Int, animate: Boole
                 color = ink, maxLines = 1, modifier = Modifier.padding(start = 10.dp))
         }
         T(note, Type.caption, color = ink.copy(alpha = 0.72f), maxLines = 1)
-    }
-}
-
-/** What the old subject cards showed, opened right under the tapped tile. */
-@Composable
-private fun SubjectPanel(c: Course, threshold: Int, s: UiState, onOpen: () -> Unit) {
-    val credits = creditsFor(c.code, s.data, s.settings)
-    Column(
-        Modifier.padding(top = 10.dp).fillMaxWidth()
-            .background(P.cardRaised, SquircleShape(26.dp))
-            .padding(18.dp),
-    ) {
-        Row(verticalAlignment = Alignment.Top) {
-            Column(Modifier.weight(1f)) {
-                T(c.name.uppercase(), Type.title, maxLines = 3)
-                if (c.type.isNotEmpty()) Box(Modifier.padding(top = 8.dp)) { Chip(c.type, Tone.Sun) }
-            }
-            Spacer(Modifier.size(12.dp))
-            ArrowButton(onOpen)
-        }
-        T(if (c.held > 0) "%.1f%% · %s".format(percent(c.attended, c.held), statusText(c.attended, c.held, threshold, credits)) else "No classes held yet",
-            Type.body, sub = true, modifier = Modifier.padding(top = 14.dp))
-        Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            T("${c.attended} of ${c.held} attended", Type.caption, faint = true, modifier = Modifier.weight(1f))
-            T("CODE  ${c.code}", Type.caption, faint = true)
-        }
     }
 }
 
@@ -369,7 +357,7 @@ private fun SubjectDetail(
     }
 
     with(shared) {
-        Box(Modifier.fillMaxSize().sharedBounds(rememberSharedContentState("card-${c.code}"), anim, clipInOverlayDuringTransition = OverlayClip(SquircleShape(28.dp)))) {
+        Box(Modifier.fillMaxSize().sharedBounds(rememberSharedContentState("card-${c.code}"), anim, boundsTransform = MorphBounds, clipInOverlayDuringTransition = OverlayClip(SquircleShape(28.dp))).blurMorph(anim)) {
             HeroPage(
                 heroColor = P.coral,
                 refreshing = s.refreshing,
