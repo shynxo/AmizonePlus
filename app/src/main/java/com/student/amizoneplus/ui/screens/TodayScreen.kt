@@ -2,6 +2,14 @@ package com.student.amizoneplus.ui.screens
 
 import com.student.amizoneplus.ui.kit.SquircleShape
 import androidx.compose.animation.animateContentSize
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.animation.core.tween
 import com.student.amizoneplus.ui.pets.perch
 import androidx.compose.animation.fadeIn
@@ -100,6 +108,7 @@ private fun dailySeries(history: List<ScheduledClass>): List<Pair<Long, Float>> 
 @Composable
 fun TodayScreen(
     s: UiState, go: (Route) -> Unit, onRefresh: () -> Unit, onBadges: () -> Unit, banner: (@Composable () -> Unit)?,
+    emailPassword: () -> String? = { null },
     onAvatar: (androidx.compose.ui.geometry.Rect) -> Unit,
 ) {
     val menu = LocalMenu.current
@@ -142,8 +151,11 @@ fun TodayScreen(
         }
         Rise(i++) {
             val prof = data?.profile
-            SelectorPill(Icons.Outlined.School,
-                listOfNotNull(prof?.program?.ifEmpty { null }, prof?.batch?.ifEmpty { null }).joinToString(" · ").ifEmpty { "Amizone ID · ${s.username.orEmpty()}" }) { go(Route.More) }
+            AccountPill(
+                listOfNotNull(prof?.program?.ifEmpty { null }, prof?.batch?.ifEmpty { null }).joinToString(" · ").ifEmpty { "Amizone ID · ${s.username.orEmpty()}" },
+                email = prof?.email.orEmpty(),
+                password = emailPassword,
+            )
         }
 
         // Alert card (reference "Stabilizing labor cost")
@@ -304,3 +316,82 @@ fun ClassRow(c: ScheduledClass, onClick: (() -> Unit)? = null) {
         }
     }
 }
+
+/**
+ * The Amizone ID pill. Tap it to open it in place, showing your Amity email and its
+ * password (hidden until you tap the eye). Tap a value to copy it. It grows from a pill into a
+ * squircle card on a soft spring, and the arrow turns.
+ */
+@Composable
+private fun AccountPill(text: String, email: String, password: () -> String?) {
+    val haptics = com.student.amizoneplus.ui.theme.LocalHaptics.current
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var open by remember { mutableStateOf(false) }
+    var reveal by remember { mutableStateOf(false) }
+    val k by androidx.compose.animation.core.animateFloatAsState(
+        if (open) 1f else 0f, androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 420f), label = "acct",
+    )
+    fun copy(label: String, v: String) {
+        val cm = ctx.getSystemService(android.content.ClipboardManager::class.java) ?: return
+        cm.setPrimaryClip(android.content.ClipData.newPlainText(label, v))
+        haptics.success()
+        if (android.os.Build.VERSION.SDK_INT < 33) android.widget.Toast.makeText(ctx, "$label copied", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    Column(
+        Modifier.perch().fillMaxWidth()
+            .background(P.cream, com.student.amizoneplus.ui.kit.SquircleShape(28.dp))
+            .animateContentSize(androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 420f)),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().press({ haptics.expand(); open = !open; if (!open) reveal = false })
+                .padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Outlined.School, null, tint = P.onCream, modifier = Modifier.size(20.dp))
+            T(text, Type.label, color = P.onCream, maxLines = 1, modifier = Modifier.weight(1f).padding(horizontal = 12.dp))
+            Box(Modifier.size(42.dp).background(P.onCream, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.KeyboardArrowDown, null, tint = P.cream, modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = 180f * k })
+            }
+        }
+        if (open) {
+            Column(
+                Modifier.padding(start = 18.dp, end = 18.dp, bottom = 14.dp)
+                    .graphicsLayer { alpha = ((k - 0.3f) / 0.7f).coerceIn(0f, 1f); translationY = -6.dp.toPx() * (1f - k) },
+            ) {
+                HorizontalDivider(color = P.onCream.copy(alpha = 0.12f), thickness = 0.5.dp)
+                AccountLine(Icons.Outlined.Email, "Email", email.ifBlank { "Not found yet" }, onClick = { if (email.isNotBlank()) copy("Email", email) })
+                val pw = password()
+                AccountLine(
+                    Icons.Outlined.Key, "Password",
+                    when { pw.isNullOrEmpty() -> "Not found yet"; reveal -> pw; else -> "•".repeat(pw.length.coerceIn(6, 14)) },
+                    onClick = { if (!pw.isNullOrEmpty()) copy("Password", pw) },
+                ) {
+                    if (!pw.isNullOrEmpty()) Box(
+                        Modifier.size(36.dp).press({ haptics.select(); reveal = !reveal }, Feel.Select, 0.85f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(if (reveal) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, null, tint = P.onCream.copy(alpha = 0.7f), modifier = Modifier.size(19.dp))
+                    }
+                }
+                T("Your Amity email login, from the Amizone dashboard. Tap to copy. Stored encrypted on this phone only.",
+                    Type.caption, color = P.onCream.copy(alpha = 0.55f), modifier = Modifier.padding(top = 6.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountLine(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String, onClick: () -> Unit, end: (@Composable () -> Unit)? = null) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).press(onClick, Feel.Tap, 0.98f),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = P.onCream.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+        Column(Modifier.weight(1f).padding(start = 14.dp)) {
+            T(label, Type.caption, color = P.onCream.copy(alpha = 0.55f))
+            T(value, Type.label, color = P.onCream, maxLines = 1)
+        }
+        end?.invoke()
+    }
+}
+

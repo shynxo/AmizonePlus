@@ -169,7 +169,12 @@ fun QuickMenuOverlay(
     val sel = remember { List(MENU_GROUPS.size) { Animatable(0f) } }
     LaunchedEffect(openGroup) {
         sel.forEachIndexed { i, a ->
-            launch { a.animateTo(if (i == openGroup) 1f else 0f, spring(dampingRatio = 0.62f, stiffness = 380f)) }
+            launch {
+                // Opening bounces (skiper-style); closing settles without overshoot, since a spring
+                // that overshoots past "closed" snaps the height to zero and kicks back, which looks jerky.
+                if (i == openGroup) a.animateTo(1f, spring(dampingRatio = 0.62f, stiffness = 380f))
+                else a.animateTo(0f, spring(dampingRatio = 1f, stiffness = 520f))
+            }
         }
     }
     val scroll = rememberScrollState()

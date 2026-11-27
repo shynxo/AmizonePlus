@@ -1,5 +1,8 @@
 package com.student.amizoneplus.ui.screens
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.graphics.graphicsLayer
 import com.student.amizoneplus.ui.kit.SquircleShape
 import android.content.Intent
 import android.net.Uri
@@ -241,10 +244,30 @@ private fun FilterMenu(value: String, onPick: (String) -> Unit) {
 private fun SubjectBars(courses: List<Course>, threshold: Int, modifier: Modifier) {
     Column(modifier) {
         BarsCanvas(courses, threshold, Modifier.fillMaxWidth().weight(1f))
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Short names (OOPs, DSA, Maths…), tilted −45° and laid back as if lying on the floor
+        // in front of the bars: each one ends right under its bar and runs down-left.
+        Row(Modifier.fillMaxWidth().height(58.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             courses.forEach { c ->
-                T(c.code.takeLast(3), Type.caption.copy(fontSize = androidx.compose.ui.unit.TextUnit(10f, androidx.compose.ui.unit.TextUnitType.Sp)),
-                    color = P.onHero.copy(alpha = 0.7f), maxLines = 1, align = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.weight(1f))
+                Box(Modifier.weight(1f).fillMaxHeight()) {
+                    androidx.compose.material3.Text(
+                        com.student.amizoneplus.logic.shortCourseName(c.name, 12).replace("OOPS", "OOPs"),
+                        style = Type.caption.copy(fontSize = androidx.compose.ui.unit.TextUnit(11f, androidx.compose.ui.unit.TextUnitType.Sp),
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                        color = P.onHero.copy(alpha = 0.75f), maxLines = 1, softWrap = false,
+                        modifier = Modifier
+                            .layout { m, cons ->
+                                // Measure at natural width; place so the text's END sits at the slot's centre.
+                                val pl = m.measure(cons.copy(minWidth = 0, maxWidth = androidx.compose.ui.unit.Constraints.Infinity))
+                                layout(cons.maxWidth, pl.height) { pl.place(cons.maxWidth / 2 - pl.width, 6.dp.roundToPx()) }
+                            }
+                            .graphicsLayer {
+                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 0f)
+                                cameraDistance = 6f * density
+                                rotationX = 38f      // lean back onto the "floor"
+                                rotationZ = -45f
+                            },
+                    )
+                }
             }
         }
     }

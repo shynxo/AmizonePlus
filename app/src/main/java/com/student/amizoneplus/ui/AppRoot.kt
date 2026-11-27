@@ -262,7 +262,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
                     ) { r ->
                         CompositionLocalProvider(com.student.amizoneplus.ui.pets.LocalPetRoute provides r) {
                         when (r) {
-                            Route.Today -> TodayScreen(s, ::go, { vm.refresh(true) }, { gallery = true }, banner) { rect -> openAbout(rect) }
+                            Route.Today -> TodayScreen(s, ::go, { vm.refresh(true) }, { gallery = true }, banner, vm::emailPassword) { rect -> openAbout(rect) }
                             Route.Subjects -> SubjectsScreen(s, { vm.refresh(true) }, { code -> lmsFocus = code; go(Route.Lms) }, vm::updateSettings, banner)
                             Route.Lms -> LmsScreen(vm, s, lmsFocus, { lmsFocus = null }, openWeb)
                             Route.Schedule -> ScheduleScreen(s, { vm.refresh(true) }, banner, scheduleFocus) { scheduleFocus = null }

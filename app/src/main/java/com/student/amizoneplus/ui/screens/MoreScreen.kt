@@ -278,27 +278,7 @@ private fun AboutCard(checkUpdates: () -> Unit, username: String?, email: String
             Modifier.fillMaxWidth().background(P.cardRaised, SquircleShape(20.dp)).padding(horizontal = 16.dp, vertical = 4.dp),
         ) {
             SettingRow(Icons.Outlined.School, "Amizone ID", right = { T(username ?: "—", Type.caption, ink = true, sub = true) })
-            SettingRow(Icons.Outlined.Language, "Email", right = {
-                T(email?.ifBlank { "—" } ?: "—", Type.caption, ink = true, sub = true, maxLines = 1,
-                    modifier = Modifier.widthIn(max = 150.dp))
-            })
-            SettingRow(
-                Icons.Outlined.Key, "Email password",
-                onClick = { haptics.select(); revealed = !revealed },
-                right = {
-                    val pw = if (revealed) (getPassword() ?: "—") else "•".repeat((getPassword()?.length ?: 8).coerceIn(6, 14))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        T(pw, Type.caption, ink = true, sub = !revealed, maxLines = 1)
-                        Icon(
-                            if (revealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                            null, tint = P.onInkFaint, modifier = Modifier.padding(start = 10.dp).size(18.dp),
-                        )
-                    }
-                },
-            )
         }
-        T("Your Amity email login, from the Amizone dashboard. Stored encrypted on this phone only.",
-            Type.caption, ink = true, faint = true, modifier = Modifier.padding(top = 8.dp))
         Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             T("Type: Barlow Condensed & DM Sans (SIL Open Font License)", Type.caption, ink = true, sub = true)
             T("Unofficial app · not affiliated with Amity University", Type.caption, ink = true, sub = true)
