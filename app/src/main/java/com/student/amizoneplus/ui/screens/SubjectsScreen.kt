@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.screens
 
+import androidx.compose.foundation.layout.width
 import kotlinx.coroutines.launch
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -327,7 +328,6 @@ private fun AttendanceTile(
             Box(
                 Modifier.weight(1f).height(8.dp + 17.dp * hold)
                     .pointerInput(none) {
-                        if (none) return@pointerInput
                         var lastStep = -1
                         fun setFrom(x: Float) {
                             val v = (x / size.width * 100f).coerceIn(0f, 100f)
@@ -341,7 +341,7 @@ private fun AttendanceTile(
                             onDragEnd = {
                                 holding = false
                                 scope.launch { shownPct.animateTo(pct, androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 260f)) }
-                                android.widget.Toast.makeText(ctx, WISHES.random(), android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(ctx, (if (none) NO_CLASS_WISHES else WISHES).random(), android.widget.Toast.LENGTH_SHORT).show()
                             },
                             onDragCancel = {
                                 holding = false
@@ -358,9 +358,11 @@ private fun AttendanceTile(
                         drawLine(ink.copy(alpha = 0.5f), Offset(tx, -3.dp.toPx()), Offset(tx, h + 3.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
                     },
             )
-            Text(if (none) "—" else "${(shownPct.value * grow.value).roundToInt()}%",
+            // Fixed width (fits "100%"), so the bar's end doesn't shift as the digits change.
+            Text(if (none && !holding && shownPct.value < 0.5f) "—" else "${(shownPct.value * grow.value).roundToInt()}%",
                 style = Type.numSm.copy(fontSize = androidx.compose.ui.unit.TextUnit(22f, androidx.compose.ui.unit.TextUnitType.Sp)),
-                color = ink, maxLines = 1, modifier = Modifier.padding(start = 10.dp))
+                color = ink, maxLines = 1, textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                modifier = Modifier.padding(start = 6.dp).width(50.dp))
         }
         // The note gives its row to the thickened bar while you're playing with it.
         T(note, Type.caption, color = ink.copy(alpha = 0.72f), maxLines = 1, modifier = Modifier
@@ -378,6 +380,14 @@ private val WISHES = listOf(
     "Nice try. Amizone didn't see that.",
     "If only attendance worked like this…",
     "Dragging it won't mark you present 😄",
+)
+
+/** …and for subjects that haven't even had a class yet. */
+private val NO_CLASS_WISHES = listOf(
+    "BRUH 💀 there aren't even classes yet",
+    "why you wanna be present in that type shit 💀",
+    "Attendance for a class that doesn't exist? Bold.",
+    "Bro's attending ghost lectures 👻",
 )
 
 @OptIn(ExperimentalSharedTransitionApi::class)
