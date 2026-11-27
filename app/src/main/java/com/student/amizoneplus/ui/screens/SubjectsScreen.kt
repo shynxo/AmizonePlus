@@ -1,5 +1,6 @@
 package com.student.amizoneplus.ui.screens
 
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.Text
 import com.student.amizoneplus.ui.pets.perch
@@ -155,11 +156,10 @@ private fun SubjectList(
     val atRisk = held.count { percent(it.attended, it.held) < t }
 
     HeroPage(
-        heroColor = P.coralDeep,
+        heroColor = P.coral,
         refreshing = s.refreshing,
         onRefresh = onRefresh,
         banner = banner,
-        sheet = false,
         hero = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // The title shrinks a touch rather than wrapping when the filter label is long.
@@ -176,16 +176,19 @@ private fun SubjectList(
                 MenuButton()
             }
             Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatTile("${courses.size}", "subjects", P.onHero.copy(alpha = 0.08f))
-                StatTile("$atRisk", "below $t%", P.onHero.copy(alpha = 0.08f), onClick = { filter = "at risk" })
+                StatTile("${courses.size}", "subjects", P.coralSoft)
+                StatTile("$atRisk", "below $t%", P.coralSoft, onClick = { filter = "at risk" })
             }
-            // Every subject as a tile; tap one to open its details right there.
-            SubjectBars(shown, t, s, Modifier.fillMaxWidth().padding(top = 14.dp), onOpen)
-            if (shown.isEmpty()) T("No subjects here.", Type.body, color = P.onHero.copy(alpha = 0.7f), modifier = Modifier.padding(top = 20.dp))
-            // Room for the target bar pinned above the nav (your target is set there).
-            Spacer(Modifier.height(64.dp))
+            // What you're aiming for: every "can miss" and "must attend" follows it.
+            com.student.amizoneplus.ui.kit.Caps("YOUR TARGET", P.onHero.copy(alpha = 0.7f), Modifier.padding(top = 18.dp, bottom = 8.dp))
+            com.student.amizoneplus.ui.kit.TargetPicker(t, { v -> updateSettings { it.copy(threshold = v) } },
+                bg = P.coralSoft, fg = P.onHero, activeBg = P.onHero, activeFg = Color.White)
         },
-    ) {}
+    ) {
+        // The sheet that slides up over the coral: every subject as a tile; tap one to open it in place.
+        SubjectBars(shown, t, s, Modifier.fillMaxWidth(), onOpen)
+        if (shown.isEmpty()) T("No subjects here.", Type.body, sub = true, modifier = Modifier.padding(top = 8.dp))
+    }
 }
 
 /** The "all / at risk / on track" filter: a pill that opens a small menu. */
@@ -194,7 +197,7 @@ private fun FilterMenu(value: String, onPick: (String) -> Unit) {
     val haptics = LocalHaptics.current
     var open by remember { mutableStateOf(false) }
     Box {
-        DropdownPill(value, { haptics.select(); open = true }, P.onHero.copy(alpha = 0.08f), P.onHero)
+        DropdownPill(value, { haptics.select(); open = true }, P.coralSoft, P.onHero)
         androidx.compose.material3.DropdownMenu(
             expanded = open,
             onDismissRequest = { open = false },
@@ -205,7 +208,7 @@ private fun FilterMenu(value: String, onPick: (String) -> Unit) {
             listOf("all" to "All subjects", "at risk" to "At risk", "on track" to "On track").forEach { (key, label) ->
                 androidx.compose.material3.DropdownMenuItem(
                     text = { T(label, Type.label, color = if (key == value) P.text else P.sub) },
-                    trailingIcon = if (key == value) ({ Icon(Icons.Outlined.Check, null, tint = P.coralDeep, modifier = Modifier.size(18.dp)) }) else null,
+                    trailingIcon = if (key == value) ({ Icon(Icons.Outlined.Check, null, tint = P.coral, modifier = Modifier.size(18.dp)) }) else null,
                     onClick = { open = false; if (key != value) { haptics.select(); onPick(key) } },
                 )
             }
@@ -266,9 +269,10 @@ private fun AttendanceTile(c: Course, threshold: Int, index: Int, animate: Boole
         grow.animateTo(1f, tween(700, easing = Motion.emphasized))
     }
     val sel by androidx.compose.animation.core.animateFloatAsState(if (selected) 1f else 0f, tween(220), label = "sel")
-    // A soft darker shape on the periwinkle page; below-target subjects go solid dark.
-    val ink = if (low) Color.White else P.onHero
-    val bg = if (low) P.onHero else P.onHero.copy(alpha = 0.08f + 0.08f * sel)
+    // Cards on the dark sheet; below-target subjects turn coral so they stand out.
+    val ink = if (low) P.onHero else P.text
+    val bg = if (low) P.coral else lerp(P.card, P.cardRaised, sel)
+    val fill = if (low) P.onHero else P.coral
     val name = com.student.amizoneplus.logic.shortCourseName(c.name, 12).replace("OOPS", "OOPs")
     val note = when {
         c.held == 0 -> "no classes yet"
@@ -293,7 +297,7 @@ private fun AttendanceTile(c: Course, threshold: Int, index: Int, animate: Boole
                     val h = size.height
                     drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, h)), ink.copy(alpha = 0.16f))
                     val w = size.width * (pct / 100f) * grow.value
-                    if (w > 0f) drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(0f, 0f, w.coerceAtLeast(h), h)), ink)
+                    if (w > 0f) drawPath(com.student.amizoneplus.ui.kit.squirclePillPath(androidx.compose.ui.geometry.Rect(0f, 0f, w.coerceAtLeast(h), h)), fill)
                     val tx = size.width * threshold / 100f
                     drawLine(ink.copy(alpha = 0.5f), Offset(tx, -3.dp.toPx()), Offset(tx, h + 3.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
                 },
@@ -312,22 +316,22 @@ private fun SubjectPanel(c: Course, threshold: Int, s: UiState, onOpen: () -> Un
     val credits = creditsFor(c.code, s.data, s.settings)
     Column(
         Modifier.padding(top = 10.dp).fillMaxWidth()
-            .background(P.onHero, SquircleShape(26.dp))
+            .background(P.cardRaised, SquircleShape(26.dp))
             .padding(18.dp),
     ) {
         Row(verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
-                T(c.name.uppercase(), Type.title, color = Color.White, maxLines = 3)
+                T(c.name.uppercase(), Type.title, maxLines = 3)
                 if (c.type.isNotEmpty()) Box(Modifier.padding(top = 8.dp)) { Chip(c.type, Tone.Sun) }
             }
             Spacer(Modifier.size(12.dp))
             ArrowButton(onOpen)
         }
         T(if (c.held > 0) "%.1f%% · %s".format(percent(c.attended, c.held), statusText(c.attended, c.held, threshold, credits)) else "No classes held yet",
-            Type.body, color = Color.White.copy(alpha = 0.85f), modifier = Modifier.padding(top = 14.dp))
+            Type.body, sub = true, modifier = Modifier.padding(top = 14.dp))
         Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            T("${c.attended} of ${c.held} attended", Type.caption, color = Color.White.copy(alpha = 0.6f), modifier = Modifier.weight(1f))
-            T("CODE  ${c.code}", Type.caption, color = Color.White.copy(alpha = 0.6f))
+            T("${c.attended} of ${c.held} attended", Type.caption, faint = true, modifier = Modifier.weight(1f))
+            T("CODE  ${c.code}", Type.caption, faint = true)
         }
     }
 }
@@ -367,7 +371,7 @@ private fun SubjectDetail(
     with(shared) {
         Box(Modifier.fillMaxSize().sharedBounds(rememberSharedContentState("card-${c.code}"), anim, clipInOverlayDuringTransition = OverlayClip(SquircleShape(28.dp)))) {
             HeroPage(
-                heroColor = P.coralDeep,
+                heroColor = P.coral,
                 refreshing = s.refreshing,
                 onRefresh = onRefresh,
                 hero = {
@@ -383,7 +387,7 @@ private fun SubjectDetail(
                         if (c.type.isNotEmpty()) Chip(c.type, Tone.Cream)
                     }
                     Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        StatTile("%.0f%%".format(p), "${c.attended}/${c.held} held", P.onHero.copy(alpha = 0.08f))
+                        StatTile("%.0f%%".format(p), "${c.attended}/${c.held} held", P.coralSoft)
                         StatTile(c.internals?.let { "%.0f".format(it.have) } ?: "—", c.internals?.let { "of %.0f internals".format(it.max) } ?: "internals", P.coralSoft)
                     }
                 },

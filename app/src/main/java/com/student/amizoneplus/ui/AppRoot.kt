@@ -280,16 +280,7 @@ private fun Main(vm: AppViewModel, s: UiState) {
                 }
             }
             com.student.amizoneplus.ui.shell.StatusBlur(hazeState)
-            com.student.amizoneplus.ui.shell.BottomNav(
-                if (aboutOpen) Route.More else route, ::go, hazeState, onBack = { closeAbout() },
-                accessory = if (route == Route.Subjects && !aboutOpen) ({
-                    // Your attendance target, pinned right above the nav on Subjects.
-                    Box(Modifier.fillMaxWidth().background(P.nav.copy(alpha = 0.94f), androidx.compose.foundation.shape.RoundedCornerShape(50)).padding(5.dp)) {
-                        com.student.amizoneplus.ui.kit.TargetPicker(s.settings.threshold, { v -> vm.updateSettings { it.copy(threshold = v) } },
-                            bg = Color.Transparent, fg = Color.White.copy(alpha = 0.7f), activeBg = P.coralDeep, activeFg = P.onHero)
-                    }
-                }) else null,
-            )
+            com.student.amizoneplus.ui.shell.BottomNav(if (aboutOpen) Route.More else route, ::go, hazeState, onBack = { closeAbout() })
           }
             // Pets roam above the screens and the nav (so they can be carried onto a tab).
             com.student.amizoneplus.ui.pets.PetLayer(pets, s.settings.pets, active = !menuMounted && web == null && !gallery && s.celebrate == null)
