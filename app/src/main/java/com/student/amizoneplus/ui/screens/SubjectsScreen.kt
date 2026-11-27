@@ -1,5 +1,7 @@
 package com.student.amizoneplus.ui.screens
 
+import androidx.compose.material3.Text
+import com.student.amizoneplus.ui.pets.perch
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -243,18 +245,23 @@ private fun FilterMenu(value: String, onPick: (String) -> Unit) {
     }
 }
 
+/** The tiles fill in once per app launch (the first time you open Subjects), not on every visit. */
+private object AttendanceIntro { var played = false }
+
 /**
- * Attendance at a glance: two columns of fat, rounded pills, one per subject. Each pill
- * fills from the left with that subject's attendance, has its short name inside (OOPs, DSA…)
- * and its percentage at the end, and a small notch marks your target. Pills fill in one
- * after another with a soft bounce. Subjects under the target fill dark, with light text.
+ * Attendance at a glance, as in student attendance trackers: a two-column grid of tiles,
+ * one per subject. Each shows the short name, the percentage big, a slim bar against your
+ * target (the notch), and what it means in plain words: how many classes you can skip, or
+ * how many you need to attend. Subjects under target turn dark so they stand out.
  */
 @Composable
 private fun SubjectBars(courses: List<Course>, threshold: Int, modifier: Modifier) {
+    val animate = remember { !AttendanceIntro.played }
+    LaunchedEffect(Unit) { AttendanceIntro.played = true }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         courses.chunked(2).forEachIndexed { row, pair ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                pair.forEachIndexed { col, c -> AttendancePill(c, threshold, row * 2 + col, Modifier.weight(1f)) }
+                pair.forEachIndexed { col, c -> AttendanceTile(c, threshold, row * 2 + col, animate, Modifier.weight(1f)) }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
@@ -262,40 +269,45 @@ private fun SubjectBars(courses: List<Course>, threshold: Int, modifier: Modifie
 }
 
 @Composable
-private fun AttendancePill(c: Course, threshold: Int, index: Int, modifier: Modifier) {
+private fun AttendanceTile(c: Course, threshold: Int, index: Int, animate: Boolean, modifier: Modifier) {
     val pct = percent(c.attended, c.held).toFloat()
     val low = pct < threshold
-    val grow = remember { Animatable(0f) }
-    LaunchedEffect(c.code, pct) {
-        grow.snapTo(0f)
-        kotlinx.coroutines.delay(60L * index)
-        grow.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.62f, stiffness = 160f))
+    val grow = remember { Animatable(if (animate) 0f else 1f) }
+    if (animate) LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(70L * index)
+        grow.animateTo(1f, tween(700, easing = Motion.emphasized))
     }
-    val fillColor = if (low) P.onHero else Color.White
+    val ink = if (low) Color.White else P.onHero
+    val bg = if (low) P.onHero else Color.White.copy(alpha = 0.22f)
     val name = com.student.amizoneplus.logic.shortCourseName(c.name, 12).replace("OOPS", "OOPs")
-    val label: @Composable (Color) -> Unit = { col ->
-        Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            T(name, Type.label, color = col, maxLines = 1, modifier = Modifier.weight(1f))
-            T("${pct.roundToInt()}%", Type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = col.copy(alpha = 0.8f), maxLines = 1)
-        }
+    val note = when {
+        c.held == 0 -> "no classes yet"
+        low -> com.student.amizoneplus.logic.mustAttend(c.attended, c.held, threshold).let { "attend $it more" }
+        else -> com.student.amizoneplus.logic.canSkip(c.attended, c.held, threshold).let { if (it == 0) "on the edge" else "can skip $it" }
     }
-    Box(
-        modifier.height(48.dp).clip(SquircleShape(50))
-            .background(P.onHero.copy(alpha = 0.10f))
-            .drawBehind {
-                val w = size.width * (pct / 100f) * grow.value
-                // Fill: a pill of its own, so the right end stays round as it grows.
-                if (w > 0f) drawRoundRect(fillColor, size = Size(w.coerceAtLeast(size.height), size.height), cornerRadius = CornerRadius(size.height / 2))
-                // Target: a small notch on the pill's bottom edge, clear of the text.
-                val tx = size.width * threshold / 100f
-                drawLine(P.onHero.copy(alpha = 0.45f), Offset(tx, size.height - 7.dp.toPx()), Offset(tx, size.height), 2.dp.toPx(), StrokeCap.Round)
-            },
+    Column(
+        modifier.perch()
+            .graphicsLayer { alpha = (grow.value * 1.6f).coerceIn(0f, 1f); translationY = 10.dp.toPx() * (1f - grow.value) }
+            .background(bg, SquircleShape(24.dp))
+            .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
     ) {
-        // Dark text everywhere; where a dark (below-target) fill passes under it, the text turns light.
-        label(P.onHero)
-        if (low) Box(Modifier.fillMaxSize().drawWithContent {
-            clipRect(right = size.width * (pct / 100f) * grow.value) { this@drawWithContent.drawContent() }
-        }) { label(Color.White) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            T(name, Type.label, color = ink, maxLines = 1, modifier = Modifier.weight(1f))
+            Text("${(pct * grow.value).roundToInt()}%", style = Type.numSm.copy(fontSize = androidx.compose.ui.unit.TextUnit(26f, androidx.compose.ui.unit.TextUnitType.Sp)), color = ink, maxLines = 1)
+        }
+        Box(
+            Modifier.padding(top = 8.dp).fillMaxWidth().height(8.dp).drawBehind {
+                val h = size.height
+                drawRoundRect(ink.copy(alpha = 0.16f), cornerRadius = CornerRadius(h / 2))
+                val w = size.width * (pct / 100f) * grow.value
+                if (w > 0f) drawRoundRect(ink, size = Size(w.coerceAtLeast(h), h), cornerRadius = CornerRadius(h / 2))
+                // Target notch, sticking out a little above and below the bar.
+                val tx = size.width * threshold / 100f
+                drawLine(if (low) Color.White.copy(alpha = 0.6f) else P.onHero.copy(alpha = 0.5f),
+                    Offset(tx, -3.dp.toPx()), Offset(tx, h + 3.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
+            },
+        )
+        T(note, Type.caption, color = ink.copy(alpha = 0.72f), maxLines = 1, modifier = Modifier.padding(top = 6.dp))
     }
 }
 
